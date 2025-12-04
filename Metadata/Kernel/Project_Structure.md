@@ -1,110 +1,34 @@
-# Project Structure: SoftwareCenter.Kernel
+# SoftwareCenter.Kernel - Final Project Structure
 
-**Root**: `SoftwareCenterRefactored/Kernel/`
+This document outlines the final, verified structure of the `SoftwareCenter.Kernel` project. This project contains the concrete logic that implements the contracts defined in `SoftwareCenter.Core`. It is the "brain" of the application, responsible for module loading, command routing, and service orchestration.
 
-## File Tree
-/Kernel
-│
-├── /Project Metadata
-│   ├── Project_Structure.md
-│   ├── Project_Implementation_Plan.md
-│   └── Project_History_Log.md
-│
-├── /Routing (The Intelligence)
-│   ├── SmartRouter.cs          # Implements IRouter
-│   ├── HandlerRegistry.cs      # The Dynamic Catalog (ConcurrentDictionary)
-│   └── CapabilityProvider.cs   # Exposes Registry items as RouteDefinitions
-│
-├── /Engine (Lifecycle)
-│   ├── ModuleLoader.cs         # Handles AssemblyLoadContext
-│
-├── /Services
-│   └── GlobalDataStore.cs      # LiteDB Implementation
-│
-├── /Contexts
-│   └── ModuleLoadContext.cs    # Isolation
-│
-└── SoftwareCenter.Kernel.csproj
+## Project Files
 
+- **SoftwareCenter.Kernel.csproj**: The .NET project file, defining dependencies like `SoftwareCenter.Core`.
+- **StandardKernel.cs**: The primary concrete implementation of the `IKernel` interface. It aggregates all the internal services (router, event bus, etc.) and exposes them to modules.
 
-1. Architectural Overview: "Body & Brain"
+## Namespaces & Files
 
-The system is divided into two distinct lifecycle phases to ensure stability and extensibility.
+### `SoftwareCenter.Kernel.Contexts`
+This namespace contains components related to assembly loading and isolation.
 
-Phase A: The Body (Host)
+- **/ModuleLoadContext.cs**: A custom `AssemblyLoadContext` that ensures each module is loaded into its own isolated memory space. This is critical for preventing DLL conflicts and enabling hot-swapping of modules.
 
-Role: The Physical Existence.
+### `SoftwareCenter.Kernel.Engine`
+This namespace contains the core logic for module lifecycle management.
 
-Responsibilities: * Starts the Process.
+- **/ModuleLoader.cs**: Responsible for discovering module DLLs in the filesystem, loading them using the `ModuleLoadContext`, finding the `IModule` implementation, and triggering its initialization.
 
-Creates the main Window (WPF/WinUI).
+### `SoftwareCenter.Kernel.Routing`
+This namespace provides the intelligent command routing and service discovery engine.
 
-Provides "Dumb" I/O (Basic file read/write, native OS calls).
+- **/HandlerRegistry.cs**: The concrete implementation of the service discovery catalog. It maintains a thread-safe, priority-sorted registry of all command handlers available in the system. Its `GetRegistryManifest()` method provides the full, detailed list of every handler to clients.
+- **/SmartRouter.cs**: The concrete implementation of `IRouter`. It uses the `HandlerRegistry` to find the highest-priority handler for a given command. It also acts as a safety barrier, catching exceptions from modules, handling deprecated/obsolete commands, and injecting trace context.
 
-Logging: Provides a BasicFileLogger (Priority 0) that writes raw text to a local file.
+### `SoftwareCenter.Kernel.Services`
+This namespace contains concrete implementations of the various service contracts defined in `SoftwareCenter.Core`.
 
-Key Constraint: The Host knows nothing about business logic. It blindly executes what the Kernel tells it to.
-
-Phase B: The Brain (Kernel)
-
-Role: The Intelligence & Orchestrator (Backend for Frontend).
-
-Responsibilities:
-
-Traffic Cop: Intercepts all commands. Routing logic determines who executes it.
-
-Registry: A dynamic catalog of every capability (Host + Modules).
-
-Memory: Manages GlobalDataStore.db for persistent settings.
-
-Safety: Wraps all execution in Exception Barriers and Tracing.
-
-2. Core Projects
-
-SoftwareCenter.Core (The Language)
-
-Type: Class Library (.NET 8)
-
-Content: * Contracts: IKernel, IRouter, IModule.
-
-DTOs: CommandStatus, RouteDefinition, TraceContext.
-
-Constants: Known Command IDs (System.Log, System.Init).
-
-Rule: Contains NO logic. Only definitions used by both Host and Kernel.
-
-SoftwareCenter.Kernel (The Brain)
-
-Type: Class Library (.NET 8)
-
-Dependencies: LiteDB, System.Runtime.Loader, Microsoft.Extensions.Logging.Abstractions.
-
-Key Components:
-
-SmartRouter: IRouter implementation with Trace Injection and Deprecation checks.
-
-HandlerRegistry: Priority-based ConcurrentDictionary for Service Discovery.
-
-ModuleLoader: AssemblyLoadContext manager for plugin isolation.
-
-KernelLogger: Middleware that enriches logs with TraceContext before routing.
-
-SoftwareCenter.Host (The Body)
-
-Type: Windows Application (WPF/WinUI)
-
-Dependencies: SoftwareCenter.Kernel, SoftwareCenter.Core.
-
-Role: The entry point. Loads Kernel, hands over control, and waits for UI events.
-
-3. Data Storage Strategy
-
-Location: %AppData%/SoftwareCenter/
-
-File: GlobalDataStore.db (LiteDB).
-
-Purpose: * Settings: User preferences (Theme, VerboseLogging).
-
-Cache: Temporary module data.
-
-Future Proofing: Designed to coexist with future DB modules (e.g., DataManager) that might mount additional DB files.
+- **/DefaultEventBus.cs**: A standard, in-memory implementation of `IEventBus` for publish-subscribe messaging.
+- **/GlobalDataStore.cs**: A default `IGlobalDataStore` implementation, likely using an in-memory dictionary or a simple file-based store for persistence.
+- **/JobScheduler.cs**: A standard implementation of `IScheduler` for managing background jobs.
+- **/KernelLogger.cs**: An internal logging service used by the Kernel itself.

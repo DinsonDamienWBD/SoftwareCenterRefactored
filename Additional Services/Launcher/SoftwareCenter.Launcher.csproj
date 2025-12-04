@@ -8,10 +8,6 @@
         <RuntimeIdentifier>win-x64</RuntimeIdentifier> 
     </PropertyGroup>
 	
-	<ItemGroup>
-		<ProjectReference Include="..\..\Contract &amp; Routing\Kernel\SoftwareCenter.Kernel.csproj" />
-	</ItemGroup>
-	
     <ItemGroup>
         <Folder Include="Config\" />
         <Folder Include="Logic\" />

@@ -13,7 +13,6 @@
 		<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.1" />
-		<ProjectReference Include="..\Contract &amp; Routing\Kernel\SoftwareCenter.Kernel.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -26,6 +25,11 @@
 		<Folder Include="Logic\" />
 		<Folder Include="Middleware\" />
 		<Folder Include="Services\" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\Contract, UI &amp; Routing\Kernel\SoftwareCenter.Kernel.csproj" />
+	  <ProjectReference Include="..\Contract, UI &amp; Routing\UI.Engine\SoftwareCenter.UI.Engine.csproj" />
 	</ItemGroup>
 
 </Project>

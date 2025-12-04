@@ -12,16 +12,16 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\..\Contract &amp; Routing\Core\SoftwareCenter.Core.csproj" />
-	</ItemGroup>
-
-	<ItemGroup>
 		<Folder Include="Interfaces\" />
 		<Folder Include="Models\" />
 		<Folder Include="Services\" />
 		<Folder Include="UI\Html\" />
 		<Folder Include="UI\Script\" />
 		<Folder Include="UI\Style\" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\..\Contract, UI &amp; Routing\Core\SoftwareCenter.Core.csproj" />
 	</ItemGroup>
 
 </Project>
