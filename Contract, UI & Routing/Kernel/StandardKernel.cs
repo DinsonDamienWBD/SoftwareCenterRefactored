@@ -22,9 +22,13 @@ namespace SoftwareCenter.Kernel
     public class StandardKernel : IKernel, IDisposable
     {
         // 1. Services
+        /// <inheritdoc />
         public IRouter Router { get; }
+        /// <inheritdoc />
         public IGlobalDataStore DataStore { get; }
+        /// <inheritdoc />
         public IEventBus EventBus { get; }
+        /// <inheritdoc />
         public IJobScheduler JobScheduler { get; }
 
         // 2. Internals
@@ -35,6 +39,11 @@ namespace SoftwareCenter.Kernel
         // 3. DI Container (Lightweight)
         private readonly Dictionary<Type, object> _services = new();
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="StandardKernel"/> class.
+        /// This constructs the entire application brain, bootstrapping all core services
+        /// like routing, data storage, eventing, and module loading.
+        /// </summary>
         public StandardKernel()
         {
             // A. Bootstrap State & Bus
@@ -111,17 +120,20 @@ namespace SoftwareCenter.Kernel
 
         // --- IKernel Implementation ---
 
+        /// <inheritdoc />
         public void Register(string commandName, Func<ICommand, Task<IResult>> handler, RouteMetadata metadata)
         {
             // Default priority 0. Modules can cast to specific Registry types if they need advanced priority.
             _registry.Register(commandName, handler, metadata, 0);
         }
 
+        /// <inheritdoc />
         public Task<IResult> RouteAsync(ICommand command)
         {
             return Router.RouteAsync(command);
         }
 
+        /// <inheritdoc />
         public T GetService<T>() where T : class
         {
             if (_services.TryGetValue(typeof(T), out var service))
@@ -138,6 +150,10 @@ namespace SoftwareCenter.Kernel
             _services[typeof(T)] = implementation!;
         }
 
+        /// <summary>
+        /// Asynchronously starts the kernel and loads all discovered modules.
+        /// </summary>
+        /// <returns>A task that represents the asynchronous start operation.</returns>
         public async Task StartAsync()
         {
             // Load standard modules from ./Modules
@@ -155,6 +171,7 @@ namespace SoftwareCenter.Kernel
             await _logger.LogExecutionAsync(new JobCommandStub("Kernel.Ready"), true, 0);
         }
 
+        /// <inheritdoc />
         public void Dispose()
         {
             (DataStore as IDisposable)?.Dispose();
