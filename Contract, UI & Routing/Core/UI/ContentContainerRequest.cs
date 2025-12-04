@@ -15,4 +15,5 @@ public class ContentContainerRequest
     /// When the nav button is clicked, this container will be shown.
     /// </summary>
     public required string AssociatedNavButtonId { get; set; }
+    public string? SpaUrl { get; set; }
 }
