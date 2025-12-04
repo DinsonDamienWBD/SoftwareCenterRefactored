@@ -72,6 +72,11 @@
     <File Path="Metadata/SourceManager/Project_Implementation_Plan.md" />
     <File Path="Metadata/SourceManager/Project_Structure.md" />
   </Folder>
+  <Folder Name="/Metadata/UI.Engine/">
+    <File Path="Metadata/UI.Engine/Project_History_Log.md" />
+    <File Path="Metadata/UI.Engine/Project_Implementation_Plan.md" />
+    <File Path="Metadata/UI.Engine/Project_Structure.md" />
+  </Folder>
   <Folder Name="/Modules/">
     <Project Path="Modules/AI.Agent/SoftwareCenter.Module.AI.Agent.csproj" />
     <Project Path="Modules/AppManager/SoftwareCenter.Module.AppManager.csproj" />
