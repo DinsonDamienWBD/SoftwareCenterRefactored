@@ -1,17 +1,18 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Threading.Tasks;
-using SoftwareCenter.Core.Commands;
+﻿using SoftwareCenter.Core.Commands;
 using SoftwareCenter.Core.Data;
 using SoftwareCenter.Core.Diagnostics;
 using SoftwareCenter.Core.Events;
 using SoftwareCenter.Core.Jobs;
 using SoftwareCenter.Core.Kernel;
+using SoftwareCenter.Core.Logging;
 using SoftwareCenter.Core.Routing;
 using SoftwareCenter.Kernel.Engine;
 using SoftwareCenter.Kernel.Routing;
 using SoftwareCenter.Kernel.Services;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Threading.Tasks;
 
 namespace SoftwareCenter.Kernel
 {
@@ -55,11 +56,11 @@ namespace SoftwareCenter.Kernel
 
             // B. Bootstrap Observability
             _logger = new KernelLogger(DataStore, EventBus);
-            (EventBus as DefaultEventBus)?.SetLogger(_logger); // Set the logger post-construction
+            (EventBus as DefaultEventBus)?.SetLogger(_logger as IKernelLogger); // Set the logger post-construction
 
             // C. Bootstrap Intelligence (Router & Scheduler)
             Router = new SmartRouter(_registry, EventBus);
-            JobScheduler = new JobScheduler(_logger);
+            JobScheduler = new JobScheduler(_logger as IKernelLogger);
 
             // D. Bootstrap Engine
             _loader = new ModuleLoader(this, _registry);

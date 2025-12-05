@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using SoftwareCenter.Core.Diagnostics;
 using SoftwareCenter.Core.Jobs;
+using SoftwareCenter.Core.Logging;
 
 namespace SoftwareCenter.Kernel.Services
 {
@@ -81,7 +82,7 @@ namespace SoftwareCenter.Kernel.Services
                 }
                 catch (Exception ex)
                 {
-                    _ = _logger.LogExceptionAsync(ex, $"An unhandled exception occurred in job '{jobName}'.");
+                    _logger.LogExceptionAsync(ex, $"An unhandled exception occurred in job '{jobName}'.");
                 }
             }
         }

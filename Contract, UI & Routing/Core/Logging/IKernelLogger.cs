@@ -7,4 +7,6 @@ namespace SoftwareCenter.Core.Logging;
 public interface IKernelLogger
 {
     void Log(string message);
+
+    void LogExceptionAsync(Exception ex, string message);
 }

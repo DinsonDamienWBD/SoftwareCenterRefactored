@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using SoftwareCenter.Core.Events;
 using SoftwareCenter.Core.Diagnostics;
+using SoftwareCenter.Core.Logging;
 
 namespace SoftwareCenter.Kernel.Services
 {
@@ -88,7 +89,7 @@ namespace SoftwareCenter.Kernel.Services
             {
                 // Critical: A subscriber crash must not crash the Publisher.
                 // Log this internal failure to the central kernel logger.
-                _ = _logger?.LogExceptionAsync(ex, $"An unhandled exception occurred in an event subscriber for '{systemEvent.Name}'.");
+                _logger?.LogExceptionAsync(ex, $"An unhandled exception occurred in an event subscriber for '{systemEvent.Name}'.");
             }
         }
     }
