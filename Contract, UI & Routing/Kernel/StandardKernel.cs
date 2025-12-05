@@ -50,19 +50,22 @@ namespace SoftwareCenter.Kernel
             // A. Bootstrap State & Bus
             _registry = new HandlerRegistry();
             DataStore = new GlobalDataStore();
-            EventBus = new DefaultEventBus();
+            // EventBus must be created before the logger that uses it.
+            EventBus = new DefaultEventBus(null); // Pass null initially
 
             // B. Bootstrap Observability
             _logger = new KernelLogger(DataStore, EventBus);
+            (EventBus as DefaultEventBus)?.SetLogger(_logger); // Set the logger post-construction
 
             // C. Bootstrap Intelligence (Router & Scheduler)
             Router = new SmartRouter(_registry, EventBus);
-            JobScheduler = new JobScheduler(); // Assuming constructor is parameterless as per previous step
+            JobScheduler = new JobScheduler(_logger);
 
             // D. Bootstrap Engine
             _loader = new ModuleLoader(this, _registry);
 
             // E. Register Self for DI
+            RegisterService<IGlobalDataStore>(DataStore);
             RegisterService<IEventBus>(EventBus);
             RegisterService<IJobScheduler>(JobScheduler);
             RegisterService<IRouter>(Router);

@@ -1,69 +1,102 @@
-﻿﻿using SoftwareCenter.Core.Jobs;
-using System;
+﻿﻿using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
+using SoftwareCenter.Core.Diagnostics;
+using SoftwareCenter.Core.Jobs;
 
 namespace SoftwareCenter.Kernel.Services
 {
     /// <summary>
-    /// A standard, in-memory implementation of the IJobScheduler interface for managing background jobs.
-    /// This implementation uses `System.Threading.Timer` for scheduling.
+    /// A standard, in-memory implementation of the IJobScheduler interface for managing background jobs
+    /// provided by modules. This implementation uses `System.Threading.Timer` for scheduling and supports
+    /// pausing, resuming, and manual triggering of jobs.
     /// </summary>
-    public class JobScheduler : IJobScheduler
+    public class JobScheduler : IJobScheduler, IDisposable
     {
-        private readonly ConcurrentDictionary<string, Timer> _timers = new();
-        private readonly ConcurrentDictionary<string, Func<Task>> _actions = new();
+        private readonly ConcurrentDictionary<string, (IJob Job, Timer Timer, bool IsPaused)> _jobs = new();
+        private readonly IKernelLogger _logger;
 
-        /// <inheritdoc />
-        public void ScheduleRecurring(string jobName, TimeSpan interval, Func<Task> action)
+        public JobScheduler(IKernelLogger logger)
         {
-            if (string.IsNullOrWhiteSpace(jobName)) throw new ArgumentNullException(nameof(jobName));
-            if (action == null) throw new ArgumentNullException(nameof(action));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
+        
+        public void Register(IJob job)
+        {
+            if (job == null) throw new ArgumentNullException(nameof(job));
 
-            // Store the action
-            _actions[jobName] = action;
-
-            // Create a timer that will execute the job.
-            // The `_` discards the state object, which we don't need here.
-            var timer = new Timer(async _ =>
+            var timer = new Timer(async _ => await ExecuteJob(job.Name), null, Timeout.Infinite, Timeout.Infinite);
+            
+            if (_jobs.TryRemove(job.Name, out var oldJob))
             {
-                if (_actions.TryGetValue(jobName, out var jobAction))
-                {
-                    // Fire-and-forget the task to prevent the timer callback from blocking.
-                    // In a real-world scenario, you'd add robust error handling here.
-                    _ = jobAction();
-                }
-            }, null, TimeSpan.Zero, interval);
-
-            // If there's an old timer, dispose of it before storing the new one.
-            if (_timers.TryRemove(jobName, out var oldTimer))
-            {
-                oldTimer.Dispose();
+                oldJob.Timer.Dispose();
             }
 
-            _timers[jobName] = timer;
+            _jobs[job.Name] = (job, timer, IsPaused: false);
+            
+            // Start the timer
+            timer.Change(TimeSpan.Zero, job.Interval);
         }
 
-        /// <inheritdoc />
-        public void Unschedule(string jobName)
+        public async void TriggerAsync(string jobName)
         {
-            if (_timers.TryRemove(jobName, out var timer))
+            await ExecuteJob(jobName, isManualTrigger: true);
+        }
+
+        public void Pause(string jobName)
+        {
+            if (_jobs.TryGetValue(jobName, out var entry))
             {
-                timer.Dispose();
+                entry.Timer.Change(Timeout.Infinite, Timeout.Infinite);
+                _jobs[jobName] = (entry.Job, entry.Timer, IsPaused: true);
             }
-            _actions.TryRemove(jobName, out _);
+        }
+
+        public void Resume(string jobName)
+        {
+            if (_jobs.TryGetValue(jobName, out var entry) && entry.IsPaused)
+            {
+                entry.Timer.Change(TimeSpan.Zero, entry.Job.Interval);
+                _jobs[jobName] = (entry.Job, entry.Timer, IsPaused: false);
+            }
+        }
+
+        private async Task ExecuteJob(string jobName, bool isManualTrigger = false)
+        {
+            if (_jobs.TryGetValue(jobName, out var entry))
+            {
+                // If it's a scheduled run (not manual) and the job is paused, skip execution.
+                if (!isManualTrigger && entry.IsPaused) return;
+
+                try
+                {
+                    // Create a new context for each run
+                    var context = new JobContext
+                    {
+                        Trace = new TraceContext(),
+                        CancellationToken = new CancellationTokenSource(TimeSpan.FromMinutes(5)).Token // Example timeout
+                    };
+                    await entry.Job.ExecuteAsync(context);
+                }
+                catch (Exception ex)
+                {
+                    _ = _logger.LogExceptionAsync(ex, $"An unhandled exception occurred in job '{jobName}'.");
+                }
+            }
         }
 
         /// <inheritdoc />
         public void Dispose()
         {
-            foreach (var timer in _timers.Values)
+            foreach (var key in _jobs.Keys)
             {
-                timer.Dispose();
+                if (_jobs.TryRemove(key, out var entry))
+                {
+                    entry.Timer.Dispose();
+                }
             }
-            _timers.Clear();
-            _actions.Clear();
+            _jobs.Clear();
         }
     }
 }

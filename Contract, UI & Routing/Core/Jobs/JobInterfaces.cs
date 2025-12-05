@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -45,7 +45,7 @@ namespace SoftwareCenter.Core.Jobs
     /// Contract for the Centralized Scheduler.
     /// Allows modules to register, pause, or manually trigger jobs.
     /// </summary>
-    public interface IJobScheduler
+    public interface IJobScheduler : IDisposable
     {
         void Register(IJob job);
 

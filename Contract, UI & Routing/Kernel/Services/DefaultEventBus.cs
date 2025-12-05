@@ -1,9 +1,10 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using SoftwareCenter.Core.Events;
+using SoftwareCenter.Core.Diagnostics;
 
 namespace SoftwareCenter.Kernel.Services
 {
@@ -15,6 +16,21 @@ namespace SoftwareCenter.Kernel.Services
     {
         // Topic -> List of Handlers
         private readonly ConcurrentDictionary<string, List<Func<IEvent, Task>>> _subscribers = new();
+        private IKernelLogger? _logger;
+
+        public DefaultEventBus(IKernelLogger? logger)
+        {
+            _logger = logger;
+        }
+
+        /// <summary>
+        /// Sets the logger for the event bus. Used to resolve circular dependencies during startup.
+        /// </summary>
+        /// <param name="logger">The kernel logger instance.</param>
+        public void SetLogger(IKernelLogger logger)
+        {
+            _logger = logger;
+        } 
 
         public void Subscribe(string eventName, Func<IEvent, Task> handler)
         {
@@ -71,8 +87,8 @@ namespace SoftwareCenter.Kernel.Services
             catch (Exception ex)
             {
                 // Critical: A subscriber crash must not crash the Publisher.
-                // In a real system, we would log this internal failure to a dedicated error log.
-                // Console.WriteLine($"Event Bus Error on topic {systemEvent.Name}: {ex.Message}");
+                // Log this internal failure to the central kernel logger.
+                _ = _logger?.LogExceptionAsync(ex, $"An unhandled exception occurred in an event subscriber for '{systemEvent.Name}'.");
             }
         }
     }

@@ -35,5 +35,5 @@ This namespace contains concrete implementations of the various service contract
 
 - **/DefaultEventBus.cs**: A standard, in-memory implementation of `IEventBus` for publish-subscribe messaging.
 - **/GlobalDataStore.cs**: A default `IGlobalDataStore` implementation, likely using an in-memory dictionary or a simple file-based store for persistence.
-- **/JobScheduler.cs**: A standard implementation of `IScheduler` for managing background jobs.
+- **/JobScheduler.cs**: A standard implementation of `IJobScheduler` for managing background jobs. It includes robust error handling and logging to prevent a faulty job from crashing the scheduler.
 - **/KernelLogger.cs**: An internal logging service used by the Kernel itself.
