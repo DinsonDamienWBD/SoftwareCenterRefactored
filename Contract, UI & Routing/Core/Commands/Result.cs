@@ -67,7 +67,7 @@ namespace SoftwareCenter.Core.Commands
 
         /// <summary>
         /// Creates a failure result from an Exception.
-        /// <param name="ex"/> The exception that caused the failure.</param>
+        /// <param name="ex"> The exception that caused the failure.</param>
         /// </summary>
         public static Result FromFailure(Exception ex)
         {

@@ -74,6 +74,7 @@ namespace SoftwareCenter.Kernel.Routing
             return null;
         }
 
+        /// <summary>
         /// Discovery API: Returns a flat list of ALL registered handlers,
         /// not just the highest priority ones. Includes priority and active status.
         /// Used by UI to generate menus or AI to know all capabilities.
