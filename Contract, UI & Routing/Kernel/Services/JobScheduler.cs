@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using SoftwareCenter.Core.Diagnostics;
 using SoftwareCenter.Core.Jobs;
-using SoftwareCenter.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace SoftwareCenter.Kernel.Services
 {
@@ -16,9 +16,9 @@ namespace SoftwareCenter.Kernel.Services
     public class JobScheduler : IJobScheduler, IDisposable
     {
         private readonly ConcurrentDictionary<string, (IJob Job, Timer Timer, bool IsPaused)> _jobs = new();
-        private readonly IKernelLogger _logger;
+        private readonly ILogger<JobScheduler> _logger;
 
-        public JobScheduler(IKernelLogger logger)
+        public JobScheduler(ILogger<JobScheduler> logger)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
@@ -82,7 +82,7 @@ namespace SoftwareCenter.Kernel.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogExceptionAsync(ex, $"An unhandled exception occurred in job '{jobName}'.");
+                    _logger.LogError(ex, "An unhandled exception occurred in job '{JobName}'", jobName);
                 }
             }
         }

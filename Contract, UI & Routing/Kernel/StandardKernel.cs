@@ -3,13 +3,14 @@ using SoftwareCenter.Core.Data;
 using SoftwareCenter.Core.Diagnostics;
 using SoftwareCenter.Core.Events;
 using SoftwareCenter.Core.Jobs;
-using SoftwareCenter.Core.Logging;
+using SoftwareCenter.Core.Kernel;
 using SoftwareCenter.Core.Routing;
 using SoftwareCenter.Kernel.Engine;
 using SoftwareCenter.Kernel.Routing;
 using SoftwareCenter.Kernel.Services;
 using System;
 using System.Collections.Generic;
+using Microsoft.Extensions.Logging;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -36,7 +37,8 @@ namespace SoftwareCenter.Kernel
 
         // Internals & DI Container
         private readonly HandlerRegistry _registry;
-        private readonly KernelLogger _loggingRouter;
+        private readonly ILoggerFactory _loggerFactory;
+        private readonly ILogger<StandardKernel> _logger;
         private readonly ModuleLoader _loader;
         private readonly Dictionary<Type, object> _services = new();
 
@@ -45,30 +47,29 @@ namespace SoftwareCenter.Kernel
         /// This constructs the entire application brain, bootstrapping all core services
         /// like routing, data storage, eventing, and module loading.
         /// </summary>
-        public StandardKernel()
+        public StandardKernel(ILoggerFactory loggerFactory)
         {
+            _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+            _logger = _loggerFactory.CreateLogger<StandardKernel>();
+
             // A. Bootstrap Core Services
             _registry = new HandlerRegistry();
             DataStore = new GlobalDataStore();
-            _loggingRouter = new KernelLogger();
-            EventBus = new DefaultEventBus(_loggingRouter);
+            EventBus = new DefaultEventBus(_loggerFactory.CreateLogger<DefaultEventBus>());
 
             // B. Bootstrap Intelligence
             Router = new SmartRouter(_registry, EventBus);
-            JobScheduler = new JobScheduler(_loggingRouter);
+            JobScheduler = new JobScheduler(_loggerFactory.CreateLogger<JobScheduler>());
 
             // C. Bootstrap Engine
             _loader = new ModuleLoader(this, _registry);
 
             // D. Register Services for DI / Service Location
+            RegisterService<ILoggerFactory>(_loggerFactory);
             RegisterService<IGlobalDataStore>(DataStore);
             RegisterService<IEventBus>(EventBus);
             RegisterService<IJobScheduler>(JobScheduler);
             RegisterService<IRouter>(Router);
-            // Register the logging router as the singleton IScLogger.
-            // All components will resolve this instance to log messages.
-            RegisterService<IScLogger>(_loggingRouter);
-            RegisterService<KernelLogger>(_loggingRouter); // Also register concrete type if needed
             // Register the kernel itself as a service so modules can access it.
             RegisterService<IKernel>(this);
 
@@ -89,8 +90,8 @@ namespace SoftwareCenter.Kernel
                         await DataStore.StoreAsync("Logging.Verbose", verbose, DataPolicy.Persistent);
                         // An advanced logger module would subscribe to this event to reconfigure itself.
                         // The Kernel no longer needs to know about logger-specific settings.
-                        EventBus.Publish(new Event("Logging.ConfigurationChanged"));
-                        return Result.FromSuccess(verbose, $"Verbose Logging set to {verbose}");
+                        await EventBus.PublishAsync(new SystemEvent("Logging.ConfigurationChanged"));
+                        return Result.FromSuccess(true, $"Verbose Logging set to {verbose}");
                     }
                     return Result.FromFailure("Invalid Parameters. Expected 'Verbose' (bool).");
                 },
@@ -168,12 +169,12 @@ namespace SoftwareCenter.Kernel
             Directory.CreateDirectory(modulesPath);
 
             // Log start
-            _loggingRouter.Log(new LogEntry(Microsoft.Extensions.Logging.LogLevel.Information, "Kernel starting..."));
+            _logger.LogInformation("Kernel starting...");
 
             // Load
             await _loader.LoadModulesAsync(modulesPath);
 
-            _loggingRouter.Log(new LogEntry(Microsoft.Extensions.Logging.LogLevel.Information, "Kernel ready. All modules loaded."));
+            _logger.LogInformation("Kernel ready. All modules loaded.");
         }
 
         /// <inheritdoc />
@@ -181,7 +182,6 @@ namespace SoftwareCenter.Kernel
         {
             (DataStore as IDisposable)?.Dispose();
             (JobScheduler as IDisposable)?.Dispose();
-            _loggingRouter.Dispose();
         }
 
         // Helper stub for internal Kernel logs

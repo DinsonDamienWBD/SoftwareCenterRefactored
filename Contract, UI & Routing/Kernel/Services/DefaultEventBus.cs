@@ -1,95 +1,88 @@
-﻿﻿using System;
+﻿using SoftwareCenter.Core.Events;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using SoftwareCenter.Core.Events;
-using SoftwareCenter.Core.Diagnostics;
-using SoftwareCenter.Core.Logging;
 
-namespace SoftwareCenter.Kernel.Services
+namespace SoftwareCenter.Core.Events;
+
+/// <summary>
+/// A thread-safe, in-memory implementation of the IEventBus interface.
+/// </summary>
+public class DefaultEventBus : IEventBus
 {
+    // Using ConcurrentDictionary for thread-safe additions and removals of event names.
+    // The value is a list of handlers. Access to this list must be synchronized.
+    private readonly ConcurrentDictionary<string, List<Func<IEvent, Task>>> _subscriptions = [];
+    private readonly ILogger<DefaultEventBus> _logger;
+
     /// <summary>
-    /// Implements Feature 3: The Event Bus (Pub/Sub).
-    /// Asynchronous, loosely coupled messaging system.
+    /// Initializes a new instance of the <see cref="DefaultEventBus"/> class.
     /// </summary>
-    public class DefaultEventBus : IEventBus
+    /// <param name="logger">The kernel logger for logging all event bus activity.</param>
+    public DefaultEventBus(ILogger<DefaultEventBus> logger)
     {
-        // Topic -> List of Handlers
-        private readonly ConcurrentDictionary<string, List<Func<IEvent, Task>>> _subscribers = new();
-        private IKernelLogger? _logger;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
 
-        public DefaultEventBus(IKernelLogger? logger)
-        {
-            _logger = logger;
-        }
+    /// <inheritdoc />
+    public async Task PublishAsync(IEvent systemEvent)
+    {
+        ArgumentNullException.ThrowIfNull(systemEvent);
+        _logger.LogInformation("Publishing event: {EventName}", systemEvent.Name);
 
-        /// <summary>
-        /// Sets the logger for the event bus. Used to resolve circular dependencies during startup.
-        /// </summary>
-        /// <param name="logger">The kernel logger instance.</param>
-        public void SetLogger(IKernelLogger logger)
+        if (_subscriptions.TryGetValue(systemEvent.Name, out var handlers))
         {
-            _logger = logger;
-        } 
-
-        public void Subscribe(string eventName, Func<IEvent, Task> handler)
-        {
-            _subscribers.AddOrUpdate(eventName,
-                // Add new
-                _ => new List<Func<IEvent, Task>> { handler },
-                // Update existing
-                (_, list) =>
-                {
-                    lock (list)
-                    {
-                        if (!list.Contains(handler))
-                        {
-                            list.Add(handler);
-                        }
-                    }
-                    return list;
-                });
-        }
-
-        public void Unsubscribe(string eventName, Func<IEvent, Task> handler)
-        {
-            if (_subscribers.TryGetValue(eventName, out var list))
+            List<Func<IEvent, Task>> handlersSnapshot;
+            lock (handlers)
             {
-                lock (list)
+                // Take a snapshot to avoid issues with collection modification during iteration.
+                handlersSnapshot = handlers.ToList();
+            }
+
+            // Execute handlers outside the lock to prevent deadlocks.
+            foreach (var handler in handlersSnapshot)
+            {
+                // We don't want one failing handler to stop others.
+                try
                 {
-                    list.Remove(handler);
+                    await handler(systemEvent);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Event handler for '{EventName}' failed.", systemEvent.Name);
                 }
             }
         }
+    }
 
-        public async Task PublishAsync(IEvent systemEvent)
+    /// <inheritdoc />
+    public void Subscribe(string eventName, Func<IEvent, Task> handler)
+    {
+        var handlers = _subscriptions.GetOrAdd(eventName, _ => []);
+        lock (handlers)
         {
-            if (_subscribers.TryGetValue(systemEvent.Name, out var handlers))
-            {
-                List<Func<IEvent, Task>> handlersSnapshot;
-                lock (handlers)
-                {
-                    handlersSnapshot = handlers.ToList(); // Snapshot to avoid modification during iteration
-                }
-
-                // Execute all handlers concurrently
-                var tasks = handlersSnapshot.Select(h => SafeExecuteAsync(h, systemEvent));
-                await Task.WhenAll(tasks);
-            }
+            handlers.Add(handler);
         }
+    }
 
-        private async Task SafeExecuteAsync(Func<IEvent, Task> handler, IEvent systemEvent)
+    /// <inheritdoc />
+    public void Unsubscribe(string eventName, Func<IEvent, Task> handler)
+    {
+        if (_subscriptions.TryGetValue(eventName, out var handlers))
         {
-            try
+            lock (handlers)
             {
-                await handler(systemEvent);
-            }
-            catch (Exception ex)
-            {
-                // Critical: A subscriber crash must not crash the Publisher.
-                // Log this internal failure to the central kernel logger.
-                _logger?.LogExceptionAsync(ex, $"An unhandled exception occurred in an event subscriber for '{systemEvent.Name}'.");
+                handlers.Remove(handler);
+
+                // If the list becomes empty after removal, we should remove the event name
+                // from the dictionary to prevent a memory leak of empty lists.
+                if (handlers.Count == 0)
+                {
+                    _subscriptions.TryRemove(eventName, out _);
+                }
             }
         }
     }
