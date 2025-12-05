@@ -2,58 +2,66 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using SoftwareCenter;
+using SoftwareCenter.Host.Services;
+using SoftwareCenter.Kernel;
+using SoftwareCenter.Kernel.Commands; // Correctly reference the new command
+using SoftwareCenter.Kernel.Services;
 using SoftwareCenter.UI.Engine;
 using SoftwareCenter.UI.Engine.Services;
 using System.IO;
-using SoftwareCenter.Kernel;
-using SoftwareCenter.Kernel.Commands.UI;
-using SoftwareCenter.Kernel.Services;
-using SoftwareCenter;
-using SoftwareCenter.Host.Services;
+using System.Threading.Tasks;
 
 namespace SoftwareCenter.Host
 {
     static class Program
     {
-        [STAThread]
+        [System.STAThread]
         static async Task Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
 
             // --- Service Registration ---
             builder.Services.AddSignalR();
-            builder.Services.AddSingleton<IUIEngine, UIEngine>();
             
-            // Create and register the Kernel instance
-            var kernel = new StandardKernel();
-            builder.Services.AddSingleton(kernel);
+            // Register UI Engine and Host Logger
+            builder.Services.AddSingleton<IUIEngine, UIEngine>();
+            builder.Services.AddSingleton<IScLogger>(sp => 
+                new HostLogger(Path.Combine(sp.GetRequiredService<IHostEnvironment>().ContentRootPath, "logs")));
+            
+            // Register Kernel and its dependencies
             builder.Services.AddSingleton<KernelLogger>();
-            builder.Services.AddSingleton<IScLogger>(sp => new HostLogger(Path.Combine(sp.GetRequiredService<IHostEnvironment>().ContentRootPath, "logs")));
+            builder.Services.AddSingleton<IKernel>(sp => 
+                new StandardKernel(sp.GetRequiredService<ILoggerFactory>()));
+            // Also register the concrete type for services that might need it (like the API endpoint)
+            builder.Services.AddSingleton(sp => (StandardKernel)sp.GetRequiredService<IKernel>());
+
 
             var app = builder.Build();
+
+            // --- Logger Registration ---
+            // After the app is built, find all loggers and register them with the KernelLogger
             var kernelLogger = app.Services.GetRequiredService<KernelLogger>();
             var loggers = app.Services.GetServices<IScLogger>();
             foreach (var logger in loggers)
             {
                 kernelLogger.RegisterLogger(logger);
             }
+            
             // --- Kernel and UI Engine Integration ---
-            // After the app is built, retrieve the IUIEngine and register it with the Kernel's DI container.
-            // This makes the IUIEngine available to all modules loaded by the Kernel.
+            var kernel = app.Services.GetRequiredService<IKernel>();
             var uiEngine = app.Services.GetRequiredService<IUIEngine>();
             kernel.RegisterService<IUIEngine>(uiEngine);
 
             // --- API Endpoints ---
             app.MapPost("/api/ui/interact", async (InteractionRequest request, StandardKernel appKernel) =>
             {
-                // The framework now handles deserialization and basic validation (e.g., required fields).
                 var command = new UIInteractionCommand(request.OwnerId, request.Action, request.AdditionalData);
                 var result = await appKernel.RouteAsync(command);
 
-                // Return a generic success or failure. The module is responsible for any UI updates.
                 return result.IsSuccess
                     ? Results.Ok(new { message = "Interaction processed." })
                     : Results.Problem(detail: result.ErrorMessage, statusCode: 500);
@@ -66,17 +74,15 @@ namespace SoftwareCenter.Host
             }
             else
             {
-                // Add production error handling (e.g., a generic error page)
                 app.UseExceptionHandler("/Error");
                 app.UseHsts();
             }
 
-            app.UseDefaultFiles(); // Enables serving index.html for root requests
-            app.UseStaticFiles(); // Serve files from wwwroot
+            app.UseDefaultFiles();
+            app.UseStaticFiles(); 
 
-            // Convention for serving module SPAs from the output directory
             var modulesPath = Path.Combine(app.Environment.ContentRootPath, "Modules");
-            Directory.CreateDirectory(modulesPath); // Ensure it exists
+            Directory.CreateDirectory(modulesPath);
             app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(modulesPath), RequestPath = "/modules" });
 
             app.MapHub<UIHub>("/ui-hub");
