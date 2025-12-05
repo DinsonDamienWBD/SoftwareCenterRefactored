@@ -41,13 +41,14 @@ namespace SoftwareCenter.Kernel
         private readonly ILogger<StandardKernel> _logger;
         private readonly ModuleLoader _loader;
         private readonly Dictionary<Type, object> _services = new();
+        private readonly KernelLogger _kernelLogger;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="StandardKernel"/> class.
         /// This constructs the entire application brain, bootstrapping all core services
         /// like routing, data storage, eventing, and module loading.
         /// </summary>
-        public StandardKernel(ILoggerFactory loggerFactory)
+        public StandardKernel(ILoggerFactory loggerFactory, string logDirectory)
         {
             _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
             _logger = _loggerFactory.CreateLogger<StandardKernel>();
@@ -56,6 +57,7 @@ namespace SoftwareCenter.Kernel
             _registry = new HandlerRegistry();
             DataStore = new GlobalDataStore();
             EventBus = new DefaultEventBus(_loggerFactory.CreateLogger<DefaultEventBus>());
+            _kernelLogger = new KernelLogger();
 
             // B. Bootstrap Intelligence
             Router = new SmartRouter(_registry, EventBus);
@@ -63,9 +65,14 @@ namespace SoftwareCenter.Kernel
 
             // C. Bootstrap Engine
             _loader = new ModuleLoader(this, _registry);
+            
+            // D. Setup Default Logger
+            var hostLogger = new HostLogger(logDirectory);
+            _kernelLogger.RegisterLogger(hostLogger);
 
-            // D. Register Services for DI / Service Location
+            // E. Register Services for DI / Service Location
             RegisterService<ILoggerFactory>(_loggerFactory);
+            RegisterService<IScLogger>(_kernelLogger); // Register the central logger
             RegisterService<IGlobalDataStore>(DataStore);
             RegisterService<IEventBus>(EventBus);
             RegisterService<IJobScheduler>(JobScheduler);
