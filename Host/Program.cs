@@ -5,11 +5,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
-using SoftwareCenter.Core.Commands;
-using SoftwareCenter.Core.UI;
 using SoftwareCenter.UI.Engine;
 using SoftwareCenter.UI.Engine.Services;
 using System.IO;
+using SoftwareCenter.Kernel;
+using SoftwareCenter.Kernel.Commands.UI;
+using SoftwareCenter.Kernel.Services;
+using SoftwareCenter;
+using SoftwareCenter.Host.Services;
 
 namespace SoftwareCenter.Host
 {
@@ -27,9 +30,16 @@ namespace SoftwareCenter.Host
             // Create and register the Kernel instance
             var kernel = new StandardKernel();
             builder.Services.AddSingleton(kernel);
+            builder.Services.AddSingleton<KernelLogger>();
+            builder.Services.AddSingleton<IScLogger>(sp => new HostLogger(Path.Combine(sp.GetRequiredService<IHostEnvironment>().ContentRootPath, "logs")));
 
             var app = builder.Build();
-
+            var kernelLogger = app.Services.GetRequiredService<KernelLogger>();
+            var loggers = app.Services.GetServices<IScLogger>();
+            foreach (var logger in loggers)
+            {
+                kernelLogger.RegisterLogger(logger);
+            }
             // --- Kernel and UI Engine Integration ---
             // After the app is built, retrieve the IUIEngine and register it with the Kernel's DI container.
             // This makes the IUIEngine available to all modules loaded by the Kernel.

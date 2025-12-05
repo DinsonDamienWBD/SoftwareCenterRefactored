@@ -40,9 +40,10 @@ namespace SoftwareCenter.Kernel.Services
             timer.Change(TimeSpan.Zero, job.Interval);
         }
 
-        public async void TriggerAsync(string jobName)
+        public void TriggerAsync(string jobName)
         {
-            await ExecuteJob(jobName, isManualTrigger: true);
+            // Fire-and-forget the execution, logging any errors that occur.
+            _ = ExecuteJob(jobName, isManualTrigger: true);
         }
 
         public void Pause(string jobName)

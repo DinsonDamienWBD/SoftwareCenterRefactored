@@ -1,4 +1,4 @@
-﻿using SoftwareCenter.Core.Logging;
+﻿using SoftwareCenter;
 using System.Text;
 
 namespace SoftwareCenter.Host.Services;
