@@ -72,7 +72,7 @@
     <File Path="Metadata/SourceManager/Project_Implementation_Plan.md" />
     <File Path="Metadata/SourceManager/Project_Structure.md" />
   </Folder>
-  <Folder Name="/Metadata/UI.Engine/">
+  <Folder Name="/Metadata/UIManager/">
     <File Path="Metadata/UI.Engine/Project_History_Log.md" />
     <File Path="Metadata/UI.Engine/Project_Implementation_Plan.md" />
     <File Path="Metadata/UI.Engine/Project_Structure.md" />
