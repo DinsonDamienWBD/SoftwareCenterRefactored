@@ -27,12 +27,4 @@
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.1" />
     </ItemGroup>
 
-	<ItemGroup>
-		<Folder Include="Commands\" />		
-		<Folder Include="Diagnostics\" />
-		<Folder Include="Events\" />
-		<Folder Include="Modules\" />
-		<Folder Include="Routing\" />
-	</ItemGroup>
-
 </Project>
