@@ -28,15 +28,11 @@
     </ItemGroup>
 
 	<ItemGroup>
-		<Folder Include="Commands\" />
-		<Folder Include="Data\" />
+		<Folder Include="Commands\" />		
 		<Folder Include="Diagnostics\" />
 		<Folder Include="Events\" />
-		<Folder Include="Jobs\" />
-		<Folder Include="Kernel\" />
 		<Folder Include="Modules\" />
 		<Folder Include="Routing\" />
-		<Folder Include="UI\" />
 	</ItemGroup>
 
 </Project>

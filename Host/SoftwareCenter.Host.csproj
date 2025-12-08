@@ -12,7 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Contract, UI &amp; Routing\Kernel\SoftwareCenter.Kernel.csproj" />
-    <ProjectReference Include="..\Contract, UI &amp; Routing\UI.Engine\SoftwareCenter.UIManager.csproj" />
+    <ProjectReference Include="..\Contract, UI &amp; Routing\UIManager\SoftwareCenter.UIManager.csproj" />
   </ItemGroup>
 
   <!-- 

@@ -1,22 +1,28 @@
-﻿using System;
+﻿namespace SoftwareCenter.Core.Diagnostics;
 
-namespace SoftwareCenter.Core.Diagnostics
+/// <summary>
+/// Represents a single step in a command's execution pipeline.
+/// </summary>
+public class TraceHop
 {
     /// <summary>
-    /// Represents a single step in the journey of a request.
-    /// Immutable struct for performance.
+    /// The name of the component that processed this step (e.g., "Kernel.Router", "Module.AppManager").
     /// </summary>
-    public struct TraceHop
-    {
-        public DateTime Timestamp { get; }
-        public string EntityId { get; } // "Host", "Kernel", "GitModule"
-        public string Action { get; }   // "Sent", "Received", "Published"
+    public string Component { get; }
 
-        public TraceHop(string entityId, string action)
-        {
-            Timestamp = DateTime.UtcNow;
-            EntityId = entityId;
-            Action = action;
-        }
+    /// <summary>
+    /// A message describing the action taken at this hop.
+    /// </summary>
+    public string Message { get; }
+
+    /// <summary>
+    /// The timestamp when this hop was recorded.
+    /// </summary>
+    public DateTime Timestamp { get; } = DateTime.UtcNow;
+
+    public TraceHop(string component, string message)
+    {
+        Component = component;
+        Message = message;
     }
 }

@@ -8,19 +8,10 @@
     <!-- Metadata -->
     <AssemblyName>SoftwareCenter.UIManager</AssemblyName>
     <RootNamespace>SoftwareCenter.UIManager</RootNamespace>
-    <Version>1.0.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\Core\SoftwareCenter.Core.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Services\" />
   </ItemGroup>
 
 </Project>
