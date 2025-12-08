@@ -55,6 +55,15 @@ namespace SoftwareCenter.Kernel
                 0, // Default priority
                 Assembly.GetExecutingAssembly().GetName().Name);
 
+            // Register the default log handler
+            services.AddTransient<DefaultLogCommandHandler>();
+            serviceRoutingRegistry.RegisterHandler(
+                typeof(LogCommand),
+                typeof(DefaultLogCommandHandler),
+                typeof(ICommandHandler<LogCommand>),
+                -100,
+                "Kernel");
+
 
             // Dynamically register all discovered handlers and populate the routing registry
             var handlers = moduleLoader.GetDiscoveredHandlers();

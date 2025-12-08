@@ -1,24 +1,30 @@
 using System;
-using System.Collections.Generic;
+using System.Collections.Concurrent;
 
 namespace SoftwareCenter.Kernel.Services
 {
     /// <summary>
-    /// A simple in-memory implementation of IServiceRegistry.
-    /// NOTE: This is a placeholder and not thread-safe.
+    /// A thread-safe in-memory implementation of IServiceRegistry.
     /// </summary>
-    public class ServiceRegistry //: IServiceRegistry
+    public class ServiceRegistry
     {
-        private readonly Dictionary<Type, Type> _serviceImplementations = new Dictionary<Type, Type>();
+        private readonly ConcurrentDictionary<Type, Type> _serviceImplementations = new ConcurrentDictionary<Type, Type>();
 
         public void Register<TService, TImplementation>()
         {
-            _serviceImplementations[typeof(TService)] = typeof(TImplementation);
+            _serviceImplementations.AddOrUpdate(
+                typeof(TService), 
+                typeof(TImplementation), 
+                (key, oldValue) => typeof(TImplementation));
         }
 
         public Type Get<TService>()
         {
-            return _serviceImplementations.GetValueOrDefault(typeof(TService));
+            if (_serviceImplementations.TryGetValue(typeof(TService), out var implType))
+            {
+                return implType;
+            }
+            return null;
         }
     }
 }

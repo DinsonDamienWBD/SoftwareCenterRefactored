@@ -1,9 +1,9 @@
-using System;
-using System.Collections.Generic;
-using System.Text.Json;
 using LiteDB;
 using SoftwareCenter.Core.Diagnostics;
 using SoftwareCenter.Kernel.Data; // Added for AccessPermissions
+using System;
+using System.Collections.Generic;
+using System.Text.Json;
 
 namespace SoftwareCenter.Kernel.Services
 {

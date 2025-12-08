@@ -15,7 +15,7 @@ namespace SoftwareCenter.Core.Jobs
         /// <summary>
         /// Gets the schedule for the job, defined as a CRON expression.
         /// The CRON expression determines when the job will be triggered.
-        * /// For example, "0 0 * * *" runs the job every day at midnight.
+        /// For example, "0 0 * * *" runs the job every day at midnight.
         /// </summary>
         string CronExpression { get; }
     }
