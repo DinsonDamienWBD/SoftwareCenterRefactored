@@ -5,8 +5,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SoftwareCenter;
+using SoftwareCenter.Host.Services;
 using SoftwareCenter.Kernel;
-using SoftwareCenter.Kernel.Commands;
+using SoftwareCenter.Kernel.Commands; // Correctly reference the new command
+using SoftwareCenter.Kernel.Services;
 using SoftwareCenter.UI.Engine;
 using SoftwareCenter.UI.Engine.Services;
 using System.IO;
@@ -24,20 +27,29 @@ namespace SoftwareCenter.Host
             // --- Service Registration ---
             builder.Services.AddSignalR();
             
-            // Register UI Engine
-            builder.Services.AddSingleton<IUIEngine, UIEngine>();
+            // Register UI Engine and Host Logger
+            builder.Services.AddSingleton<IUIEngine, UIManager>();
+            builder.Services.AddSingleton<IScLogger>(sp => 
+                new HostLogger(Path.Combine(sp.GetRequiredService<IHostEnvironment>().ContentRootPath, "logs")));
             
             // Register Kernel and its dependencies
+            builder.Services.AddSingleton<KernelLogger>();
             builder.Services.AddSingleton<IKernel>(sp => 
-                new StandardKernel(
-                    sp.GetRequiredService<ILoggerFactory>(),
-                    Path.Combine(sp.GetRequiredService<IHostEnvironment>().ContentRootPath, "logs")
-                ));
+                new StandardKernel(sp.GetRequiredService<ILoggerFactory>()));
             // Also register the concrete type for services that might need it (like the API endpoint)
             builder.Services.AddSingleton(sp => (StandardKernel)sp.GetRequiredService<IKernel>());
 
 
             var app = builder.Build();
+
+            // --- Logger Registration ---
+            // After the app is built, find all loggers and register them with the KernelLogger
+            var kernelLogger = app.Services.GetRequiredService<KernelLogger>();
+            var loggers = app.Services.GetServices<IScLogger>();
+            foreach (var logger in loggers)
+            {
+                kernelLogger.RegisterLogger(logger);
+            }
             
             // --- Kernel and UI Engine Integration ---
             var kernel = app.Services.GetRequiredService<IKernel>();

@@ -7,15 +7,15 @@ using SoftwareCenter.UI.Engine.Services;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 
-namespace SoftwareCenter.UI.Engine;
+namespace SoftwareCenter.UIManager;
 
-public class UIEngine : IUIEngine
+public class UIManager : IUIEngine
 {
     private readonly IHubContext<UIHub> _hubContext;
-    private readonly ILogger<UIEngine> _logger;
+    private readonly ILogger<UIManager> _logger;
     private readonly ConcurrentDictionary<string, UIElement> _uiState = new();
 
-    public UIEngine(IHubContext<UIHub> hubContext, ILogger<UIEngine> logger)
+    public UIManager(IHubContext<UIHub> hubContext, ILogger<UIManager> logger)
     {
         _hubContext = hubContext;
         _logger = logger;

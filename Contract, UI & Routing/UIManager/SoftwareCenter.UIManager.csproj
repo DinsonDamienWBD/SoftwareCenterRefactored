@@ -6,8 +6,8 @@
     <Nullable>enable</Nullable>
 
     <!-- Metadata -->
-    <AssemblyName>SoftwareCenter.UI.Engine</AssemblyName>
-    <RootNamespace>SoftwareCenter.UI.Engine</RootNamespace>
+    <AssemblyName>SoftwareCenter.UIManager</AssemblyName>
+    <RootNamespace>SoftwareCenter.UIManager</RootNamespace>
     <Version>1.0.0</Version>
   </PropertyGroup>
 
