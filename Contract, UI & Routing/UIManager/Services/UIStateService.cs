@@ -1,67 +1,101 @@
-using System;
+using SoftwareCenter.Core.Data.UI;
+using SoftwareCenter.Core.Routing;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using SoftwareCenter.Core.UI;
+using System.Linq;
 
 namespace SoftwareCenter.UIManager.Services
 {
     /// <summary>
-    /// Manages the state of all UI elements in the application.
-    /// This service is the single source of truth for the UI's structure and properties.
+    /// Manages the in-memory state of all UI elements. This service is the single source of truth for the UI's structure.
+    /// It handles the registration, retrieval, and removal of UI elements, and manages priority-based overrides.
     /// </summary>
     public class UIStateService
     {
-        private readonly ConcurrentDictionary<Guid, UIElement> _elements = new ConcurrentDictionary<Guid, UIElement>();
+        // Main dictionary storing all registered UI fragments, keyed by their unique ID.
+        private readonly ConcurrentDictionary<string, UIFragment> _fragments = new();
 
-        /// <summary>
-        /// Event raised when the UI state changes.
-        /// </summary>
-        public event Action UIStateChanged;
+        // A lookup to track which fragments are associated with a given "slot" or parent.
+        // This allows for efficient priority-based lookups. The string key is a conceptual "slot" name.
+        private readonly ConcurrentDictionary<string, SortedSet<UIFragment>> _fragmentSlots = new();
 
-        /// <summary>
-        /// Adds a new UI element to the state.
-        /// </summary>
-        /// <param name="element">The element to add.</param>
-        /// <returns>True if the element was added, false if an element with the same ID already exists.</returns>
-        public bool TryAddElement(UIElement element)
+
+        public bool TryAddFragment(UIFragment fragment)
         {
-            if (_elements.TryAdd(element.Id, element))
+            if (!_fragments.TryAdd(fragment.Id, fragment))
             {
-                UIStateChanged?.Invoke();
-                return true;
+                return false;
             }
-            return false;
+
+            // If the fragment has a slot name, add it to the priority-sorted set for that slot.
+            if (!string.IsNullOrEmpty(fragment.SlotName))
+            {
+                var slot = _fragmentSlots.GetOrAdd(fragment.SlotName, _ => new SortedSet<UIFragment>(new FragmentPriorityComparer()));
+                slot.Add(fragment);
+            }
+            return true;
+        }
+
+        public UIFragment GetFragment(string id)
+        {
+            _fragments.TryGetValue(id, out var fragment);
+            return fragment;
+        }
+
+        public bool TryRemoveFragment(string id)
+        {
+            if (!_fragments.TryRemove(id, out var fragment))
+            {
+                return false;
+            }
+
+            // Also remove from the priority slot if it exists there.
+            if (!string.IsNullOrEmpty(fragment.SlotName) && _fragmentSlots.TryGetValue(fragment.SlotName, out var slot))
+            {
+                slot.Remove(fragment);
+            }
+            return true;
         }
 
         /// <summary>
-        /// Gets a UI element by its ID.
+        /// Gets the highest-priority, active fragment for a given slot name.
         /// </summary>
-        /// <param name="id">The ID of the element to retrieve.</param>
-        /// <param name="element">The output element, if found.</param>
-        /// <returns>True if an element with the given ID was found, otherwise false.</returns>
-        public bool TryGetElement(Guid id, out UIElement element)
+        /// <param name="slotName">The name of the slot (e.g., "SourceManagement.MainView").</param>
+        /// <returns>The highest priority UIFragment, or null if none are found.</returns>
+        public UIFragment GetActiveFragmentForSlot(string slotName)
         {
-            return _elements.TryGetValue(id, out element);
+            if (_fragmentSlots.TryGetValue(slotName, out var slot))
+            {
+                // The SortedSet ensures the first element is the one with the highest priority.
+                return slot.FirstOrDefault();
+            }
+            return null;
         }
 
-        /// <summary>
-        /// Retrieves a UI element by its ID.
-        /// </summary>
-        /// <param name="id">The ID of the element to retrieve.</param>
-        /// <returns>The UIElement if found, otherwise null.</returns>
-        public UIElement GetElement(Guid id)
+        public IEnumerable<UIFragment> GetAllFragments()
         {
-            _elements.TryGetValue(id, out var element);
-            return element;
+            return _fragments.Values;
         }
+    }
 
-        /// <summary>
-        /// Gets a snapshot of all current UI elements.
-        /// </summary>
-        /// <returns>A thread-safe collection of all UI elements.</returns>
-        public ICollection<UIElement> GetAllElements()
+    /// <summary>
+    /// Comparer to sort UIFragments by priority, with higher priority values coming first.
+    /// </summary>
+    file class FragmentPriorityComparer : IComparer<UIFragment>
+    {
+        public int Compare(UIFragment x, UIFragment y)
         {
-            return _elements.Values;
+            if (x == null || y == null) return 0;
+
+            // Higher priority enum values should come first.
+            int priorityComparison = y.Priority.CompareTo(x.Priority);
+            if (priorityComparison != 0)
+            {
+                return priorityComparison;
+            }
+
+            // As a tie-breaker, use the ID.
+            return string.Compare(x.Id, y.Id, System.StringComparison.Ordinal);
         }
     }
 }

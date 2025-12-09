@@ -2,9 +2,10 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging; // Added for ILogger
+using Microsoft.Extensions.Logging;
 using SoftwareCenter.Core.Commands;
 using SoftwareCenter.Core.Diagnostics;
+using SoftwareCenter.Core.Errors; // Added for IErrorHandler
 
 namespace SoftwareCenter.Kernel.Services
 {
@@ -16,7 +17,8 @@ namespace SoftwareCenter.Kernel.Services
     {
         private readonly IServiceProvider _serviceProvider;
         private readonly IServiceRoutingRegistry _routingRegistry;
-        private readonly ILogger<SmartCommandRouter> _logger; // Added ILogger
+        private readonly ILogger<SmartCommandRouter> _logger;
+        private readonly IErrorHandler _errorHandler; // Injected IErrorHandler
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SmartCommandRouter"/> class.
@@ -24,11 +26,13 @@ namespace SoftwareCenter.Kernel.Services
         /// <param name="serviceProvider">The service provider to resolve handler instances.</param>
         /// <param name="routingRegistry">The routing registry to get handler priorities and types.</param>
         /// <param name="logger">The logger for diagnostics.</param>
-        public SmartCommandRouter(IServiceProvider serviceProvider, IServiceRoutingRegistry routingRegistry, ILogger<SmartCommandRouter> logger)
+        /// <param name="errorHandler">The error handler for reporting unhandled exceptions.</param>
+        public SmartCommandRouter(IServiceProvider serviceProvider, IServiceRoutingRegistry routingRegistry, ILogger<SmartCommandRouter> logger, IErrorHandler errorHandler)
         {
             _serviceProvider = serviceProvider;
             _routingRegistry = routingRegistry;
             _logger = logger;
+            _errorHandler = errorHandler;
         }
 
         public async Task Route(ICommand command, ITraceContext traceContext)
@@ -69,14 +73,14 @@ namespace SoftwareCenter.Kernel.Services
                     {
                         await ((dynamic)validator).Validate((dynamic)command, traceContext);
                     }
-                    catch (ValidationException vex)
+                    catch (Core.Errors.ValidationException vex) // Explicitly catch our ValidationException
                     {
                         _logger.LogWarning(vex, "Command validation failed for command '{CommandName}' (TraceId: {TraceId}).", commandType.Name, traceContext.TraceId);
                         throw; // Re-throw validation exceptions
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "An unexpected error occurred during validation of command '{CommandName}' (TraceId: {TraceId}).", commandType.Name, traceContext.TraceId);
+                        await _errorHandler.HandleError(ex, traceContext, $"An unexpected error occurred during validation of command '{commandType.Name}'.");
                         throw;
                     }
                 }
@@ -106,7 +110,11 @@ namespace SoftwareCenter.Kernel.Services
                 }
             }
 
-            _logger.LogError("No handler successfully processed command type '{CommandName}' (TraceId: {TraceId}).", command.GetType().Name, traceContext.TraceId);
+            // If we reach here, no handler successfully processed the command
+            await _errorHandler.HandleError(new InvalidOperationException($"No handler successfully processed command type '{command.GetType().Name}'."), 
+                                            traceContext, 
+                                            $"No handler successfully processed command type '{command.GetType().Name}'.", 
+                                            isCritical: false); // Not critical enough to shutdown, but definitely an error
             throw new InvalidOperationException($"No handler successfully processed command type '{command.GetType().Name}'.");
         }
 
@@ -132,7 +140,11 @@ namespace SoftwareCenter.Kernel.Services
                 }
             }
 
-            _logger.LogError("No handler successfully processed command type '{CommandName}' (TraceId: {TraceId}) and returned a result.", command.GetType().Name, traceContext.TraceId);
+            // If we reach here, no handler successfully processed the command
+            await _errorHandler.HandleError(new InvalidOperationException($"No handler successfully processed command type '{command.GetType().Name}' and returned a result."), 
+                                            traceContext, 
+                                            $"No handler successfully processed command type '{command.GetType().Name}' and returned a result.", 
+                                            isCritical: false); // Not critical enough to shutdown, but definitely an error
             throw new InvalidOperationException($"No handler successfully processed command type '{command.GetType().Name}' and returned a result.");
         }
     }

@@ -7,40 +7,29 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
-using Microsoft.AspNetCore.SignalR;
 using SoftwareCenter.Core.Commands;
+using SoftwareCenter.Core.Commands.UI;
 using SoftwareCenter.Core.Diagnostics;
+using SoftwareCenter.Core.Routing;
+using SoftwareCenter.Host;
+using SoftwareCenter.Host.Services;
 using SoftwareCenter.Kernel;
-using SoftwareCenter.Kernel.Services;
 using SoftwareCenter.UIManager;
 using SoftwareCenter.UIManager.Services;
-using SoftwareCenter.Host; // For UIHub
 
 var builder = WebApplication.CreateBuilder(args);
 
 // --- Dependency Injection ---
 builder.Services.AddKernel();
 builder.Services.AddUIManager();
-builder.Services.AddSignalR(); // Add SignalR services
+builder.Services.AddSignalR(); 
+
+// Register the notifier service that allows UIManager to talk to the hub
+builder.Services.AddTransient<IUIHubNotifier, UIHubNotifier>();
 
 var app = builder.Build();
 
-// --- Wire up SignalR to UIManager events ---
-var uiStateService = app.Services.GetRequiredService<UIStateService>();
-var uiHubContext = app.Services.GetRequiredService<IHubContext<UIHub>>();
-
-uiStateService.UIStateChanged += async () =>
-{
-    var uiState = uiStateService.GetAllElements();
-    await uiHubContext.Clients.All.SendAsync("ReceiveUIUpdate", uiState);
-};
-
 // --- API Endpoints ---
-app.MapGet("/api/ui_state", (UIStateService uiStateService) =>
-{
-    return Results.Ok(uiStateService.GetAllElements());
-});
-
 app.MapPost("/api/dispatch/{commandName}", async (
     string commandName,
     JsonElement payload,
@@ -53,19 +42,20 @@ app.MapPost("/api/dispatch/{commandName}", async (
     {
         return Results.NotFound($"Command '{commandName}' not found.");
     }
+    
+    // TODO: The ModuleId should come from an authenticated user's claims or a request header.
+    var traceContext = new TraceContext { Items = { ["ModuleId"] = "Host.Frontend" } };
 
     try
     {
         var command = payload.Deserialize(commandType, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         if (command == null) return Results.BadRequest("Could not deserialize command payload.");
         
-        var traceContext = new TraceContext { Items = { ["ModuleId"] = "Host.Frontend" } };
-
         var resultInterface = commandType.GetInterfaces().FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommand<>));
         if (resultInterface != null)
         {
             var resultType = resultInterface.GetGenericArguments()[0];
-            var dispatchMethod = typeof(ICommandBus).GetMethod(nameof(ICommandBus.Dispatch), new[] { typeof(ICommand<>).MakeGenericType(resultType), typeof(ITraceContext) });
+            var dispatchMethod = typeof(ICommandBus).GetMethod(nameof(ICommandBus.Dispatch)).MakeGenericMethod(resultType);
             
             var task = (Task)dispatchMethod.Invoke(commandBus, new object[] { command, traceContext });
             await task;
@@ -81,6 +71,7 @@ app.MapPost("/api/dispatch/{commandName}", async (
     }
     catch (Exception ex)
     {
+        // A proper error handling middleware should be used here
         return Results.Problem(ex.InnerException?.Message ?? ex.Message, statusCode: 500);
     }
 });
@@ -110,6 +101,29 @@ if (Directory.Exists(modulesPath))
     }
 }
 
-app.MapHub<UIHub>("/uihub"); // Map the SignalR hub
+app.MapHub<UIHub>("/uihub");
+
+// --- Initialize Host UI ---
+using (var scope = app.Services.CreateScope())
+{
+    var commandBus = scope.ServiceProvider.GetRequiredService<ICommandBus>();
+    var hostTraceContext = new TraceContext { Items = { ["ModuleId"] = "Host" } };
+
+    // Register Nav buttons and content containers for default Host services
+    await commandBus.Dispatch(
+        new RegisterUIFragmentCommand(
+            "<button id=\"host-apps-nav-button\" class=\"nav-button\">Applications</button>",
+            parentId: "nav-zone",
+            priority: HandlerPriority.Low),
+        hostTraceContext);
+        
+    await commandBus.Dispatch(
+        new RegisterUIFragmentCommand(
+            "<div id=\"host-apps-content\" class=\"content-container\"><h1>Applications</h1></div>",
+            parentId: "content-zone",
+            priority: HandlerPriority.Low),
+        hostTraceContext);
+}
+
 
 app.Run();

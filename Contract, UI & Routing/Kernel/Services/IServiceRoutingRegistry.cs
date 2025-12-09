@@ -34,6 +34,12 @@ namespace SoftwareCenter.Kernel.Services
         /// <param name="contractType">The type of the command, event, or job contract.</param>
         /// <returns>A list of HandlerRegistration objects, ordered from highest to lowest priority.</returns>
         IEnumerable<HandlerRegistration> GetAllHandlers(Type contractType);
+
+        /// <summary>
+        /// Removes all handlers that were registered by a specific module.
+        /// </summary>
+        /// <param name="moduleId">The ID of the module whose handlers should be removed.</param>
+        void UnregisterModuleHandlers(string moduleId);
     }
 
     /// <summary>

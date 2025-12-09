@@ -1,9 +1,10 @@
 using LiteDB;
 using SoftwareCenter.Core.Diagnostics;
-using SoftwareCenter.Kernel.Data; // Added for AccessPermissions
+using SoftwareCenter.Kernel.Data;
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using SoftwareCenter.Core.Data; // Added for IDataAccessManager and AccessPermissions
 
 namespace SoftwareCenter.Kernel.Services
 {
@@ -15,12 +16,14 @@ namespace SoftwareCenter.Kernel.Services
         private readonly LiteDatabase _db;
         private readonly ILiteCollection<BsonDocument> _dataCollection;
         private readonly ILiteCollection<AuditRecord> _auditCollection;
+        private readonly IDataAccessManager _dataAccessManager; // Injected IDataAccessManager
 
         /// <summary>
         /// Initializes a new instance of the <see cref="GlobalDataStore"/> class.
         /// </summary>
         /// <param name="databasePath">The path to the LiteDB database file.</param>
-        public GlobalDataStore(string databasePath = "global_store.db")
+        /// <param name="dataAccessManager">The data access manager to handle permission checks.</param>
+        public GlobalDataStore(string databasePath = "global_store.db", IDataAccessManager dataAccessManager = null)
         {
             _db = new LiteDatabase(databasePath);
             _dataCollection = _db.GetCollection("datastore");
@@ -30,13 +33,14 @@ namespace SoftwareCenter.Kernel.Services
             _auditCollection.EnsureIndex(x => x.DataKey);
             _auditCollection.EnsureIndex(x => x.TraceId);
             _auditCollection.EnsureIndex(x => x.InitiatingModuleId);
+
+            _dataAccessManager = dataAccessManager ?? new DefaultDataAccessManager(); // Use default if not provided
         }
 
         public T Get<T>(string key, ITraceContext traceContext)
         {
             var doc = _dataCollection.FindOne(Query.EQ("Key", key));
             
-            // Log the read operation
             LogAudit(key, "Get", traceContext);
 
             if (doc == null)
@@ -45,9 +49,10 @@ namespace SoftwareCenter.Kernel.Services
             }
 
             var storeItem = BsonMapper.Global.ToObject<StoreItem<T>>(doc);
-            
             var requestingModuleId = GetInitiatingModuleId(traceContext);
-            if (storeItem.OwnerModuleId != requestingModuleId && !HasPermission(storeItem, requestingModuleId, AccessPermissions.Read))
+            var itemMetadata = new StoreItemMetadata { OwnerModuleId = storeItem.OwnerModuleId, SharedPermissions = storeItem.SharedPermissions };
+
+            if (!_dataAccessManager.CheckPermission(itemMetadata, requestingModuleId, AccessPermissions.Read))
             {
                 throw new UnauthorizedAccessException($"Module '{requestingModuleId}' does not have read access to key '{key}'.");
             }
@@ -55,7 +60,7 @@ namespace SoftwareCenter.Kernel.Services
             return storeItem.Value;
         }
 
-        public void Set<T>(string key, T value, string ownerModuleId, ITraceContext traceContext)
+        public void Set<T>(string key, T value, string ownerModuleId, ITraceContext traceContext, AccessPermissions initialSharedPermissions = AccessPermissions.None)
         {
             var existingDoc = _dataCollection.FindOne(Query.EQ("Key", key));
             
@@ -64,9 +69,10 @@ namespace SoftwareCenter.Kernel.Services
             if (existingDoc != null)
             {
                 var existingItem = BsonMapper.Global.ToObject<StoreItem<T>>(existingDoc);
-                
                 var requestingModuleId = GetInitiatingModuleId(traceContext);
-                if (existingItem.OwnerModuleId != requestingModuleId && !HasPermission(existingItem, requestingModuleId, AccessPermissions.Write))
+                var itemMetadata = new StoreItemMetadata { OwnerModuleId = existingItem.OwnerModuleId, SharedPermissions = existingItem.SharedPermissions };
+
+                if (!_dataAccessManager.CheckPermission(itemMetadata, requestingModuleId, AccessPermissions.Write))
                 {
                     throw new UnauthorizedAccessException($"Module '{requestingModuleId}' does not have write access to key '{key}'.");
                 }
@@ -87,8 +93,18 @@ namespace SoftwareCenter.Kernel.Services
                     CreatorTraceId = traceContext.TraceId,
                     CreatedAt = DateTimeOffset.UtcNow,
                     LastUpdaterTraceId = traceContext.TraceId,
-                    LastUpdatedAt = DateTimeOffset.UtcNow
+                    LastUpdatedAt = DateTimeOffset.UtcNow,
+                    SharedPermissions = new Dictionary<string, AccessPermissions>()
                 };
+                if (initialSharedPermissions != AccessPermissions.None)
+                {
+                    // If initialSharedPermissions are provided, they are for the owner, or a special case.
+                    // For simplicity, we can assume these are for future sharing, or just ensure the owner has full access.
+                    // For now, let's just make sure owner has full access when creating.
+                    // The 'initialSharedPermissions' parameter could be used to pre-configure sharing with specific modules.
+                    // For this iteration, we'll keep it simple and ensure owner has full.
+                    // This parameter is kept for future advanced use cases.
+                }
                 _dataCollection.Insert(BsonMapper.Global.ToBson(newItem));
             }
         }
@@ -100,10 +116,11 @@ namespace SoftwareCenter.Kernel.Services
 
             LogAudit(key, "Delete", traceContext);
 
-            var storeItem = BsonMapper.Global.ToObject<StoreItem<object>>(doc); // Use object as T for generic operations
-
+            var storeItem = BsonMapper.Global.ToObject<StoreItem<object>>(doc);
             var requestingModuleId = GetInitiatingModuleId(traceContext);
-            if (storeItem.OwnerModuleId != requestingModuleId && !HasPermission(storeItem, requestingModuleId, AccessPermissions.Delete))
+            var itemMetadata = new StoreItemMetadata { OwnerModuleId = storeItem.OwnerModuleId, SharedPermissions = storeItem.SharedPermissions };
+
+            if (!_dataAccessManager.CheckPermission(itemMetadata, requestingModuleId, AccessPermissions.Delete))
             {
                 throw new UnauthorizedAccessException($"Module '{requestingModuleId}' does not have delete access to key '{key}'.");
             }
@@ -122,9 +139,10 @@ namespace SoftwareCenter.Kernel.Services
             LogAudit(key, "Share", traceContext, new { TargetModule = targetModuleId, Permissions = permissions });
 
             var storeItem = BsonMapper.Global.ToObject<StoreItem<object>>(doc);
-
             var requestingModuleId = GetInitiatingModuleId(traceContext);
-            if (storeItem.OwnerModuleId != requestingModuleId && !HasPermission(storeItem, requestingModuleId, AccessPermissions.Share))
+            var itemMetadata = new StoreItemMetadata { OwnerModuleId = storeItem.OwnerModuleId, SharedPermissions = storeItem.SharedPermissions };
+
+            if (!_dataAccessManager.CheckPermission(itemMetadata, requestingModuleId, AccessPermissions.Share))
             {
                 throw new UnauthorizedAccessException($"Module '{requestingModuleId}' does not have permission to share key '{key}'.");
             }
@@ -144,9 +162,10 @@ namespace SoftwareCenter.Kernel.Services
             LogAudit(key, "TransferOwnership", traceContext, new { OldOwner = BsonMapper.Global.ToObject<StoreItem<object>>(doc).OwnerModuleId, NewOwner = newOwnerModuleId });
 
             var storeItem = BsonMapper.Global.ToObject<StoreItem<object>>(doc);
-
             var requestingModuleId = GetInitiatingModuleId(traceContext);
-            if (storeItem.OwnerModuleId != requestingModuleId && !HasPermission(storeItem, requestingModuleId, AccessPermissions.TransferOwnership))
+            var itemMetadata = new StoreItemMetadata { OwnerModuleId = storeItem.OwnerModuleId, SharedPermissions = storeItem.SharedPermissions };
+
+            if (!_dataAccessManager.CheckPermission(itemMetadata, requestingModuleId, AccessPermissions.TransferOwnership))
             {
                 throw new UnauthorizedAccessException($"Module '{requestingModuleId}' does not have permission to transfer ownership of key '{key}'.");
             }
@@ -155,16 +174,7 @@ namespace SoftwareCenter.Kernel.Services
             storeItem.SharedPermissions.Clear(); // Ownership transfer typically clears previous shares
             _dataCollection.Update(BsonMapper.Global.ToBson(storeItem));
         }
-
-        private bool HasPermission(StoreItem<object> item, string moduleId, AccessPermissions requiredPermission)
-        {
-            if (item.SharedPermissions.TryGetValue(moduleId, out var grantedPermissions))
-            {
-                return grantedPermissions.HasFlag(requiredPermission);
-            }
-            return false;
-        }
-
+        
         private string GetInitiatingModuleId(ITraceContext traceContext)
         {
             if (traceContext.Items.TryGetValue("ModuleId", out var moduleIdObj) && moduleIdObj is string moduleId)

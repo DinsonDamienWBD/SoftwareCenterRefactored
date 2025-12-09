@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using SoftwareCenter.Kernel.Data; // Added for AccessPermissions
+using SoftwareCenter.Core.Data; // Changed for AccessPermissions
 
 namespace SoftwareCenter.Kernel.Data
 {

@@ -3,228 +3,240 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.Loader; // Added for AssemblyLoadContext
+using System.Runtime.Loader;
 using SoftwareCenter.Core.Attributes;
 using SoftwareCenter.Core.Commands;
 using SoftwareCenter.Core.Events;
 using SoftwareCenter.Core.Jobs;
 using SoftwareCenter.Core.Modules;
 using SoftwareCenter.Core.Routing;
+using SoftwareCenter.Core.Errors;
+using SoftwareCenter.Core.Diagnostics;
+using SoftwareCenter.Kernel.Models;
 
 namespace SoftwareCenter.Kernel.Services
 {
-    /// <summary>
-    /// Discovers and loads modules and their capabilities from the filesystem.
-    /// </summary>
     public class ModuleLoader
     {
-        private readonly List<(Assembly Assembly, ModuleLoadContext Context)> _loadedModules = new List<(Assembly, ModuleLoadContext)>();
-        private bool _modulesLoaded = false;
+        private readonly Dictionary<string, ModuleInfo> _loadedModules = new Dictionary<string, ModuleInfo>();
+        private bool _initialModulesLoaded = false;
+        private readonly IErrorHandler _errorHandler;
+        private readonly IServiceRoutingRegistry _serviceRoutingRegistry;
+        private readonly IServiceRegistry _serviceRegistry;
+
+        public ModuleLoader(IErrorHandler errorHandler, IServiceRoutingRegistry serviceRoutingRegistry, IServiceRegistry serviceRegistry)
+        {
+            _errorHandler = errorHandler ?? throw new ArgumentNullException(nameof(errorHandler));
+            _serviceRoutingRegistry = serviceRoutingRegistry ?? throw new ArgumentNullException(nameof(serviceRoutingRegistry));
+            _serviceRegistry = serviceRegistry ?? throw new ArgumentNullException(nameof(serviceRegistry));
+        }
 
         public class DiscoveredHandler
         {
             public Type HandlerType { get; set; }
-            public Type ContractType { get; set; } // ICommand, IEvent, IJob
-            public Type InterfaceType { get; set; } // ICommandHandler<>, IEventHandler<>, IJobHandler<>
-            public int Priority { get; set; } // The priority of this handler
-            public string OwningModuleId { get; set; } // The module ID that registered this handler
+            public Type ContractType { get; set; }
+            public Type InterfaceType { get; set; }
+            public int Priority { get; set; }
+            public string OwningModuleId { get; set; }
         }
 
         public void LoadModulesFromDisk()
         {
-            if (_modulesLoaded) return;
+            if (_initialModulesLoaded) return;
 
             var hostAssembly = Assembly.GetEntryAssembly();
             var rootPath = Path.GetDirectoryName(hostAssembly.Location);
             var modulesPath = Path.Combine(rootPath, "Modules");
 
-            if (!Directory.Exists(modulesPath))
+            if (Directory.Exists(modulesPath))
             {
-                _modulesLoaded = true;
+                var moduleDirectories = Directory.GetDirectories(modulesPath);
+                foreach (var dir in moduleDirectories)
+                {
+                    var dirName = new DirectoryInfo(dir).Name;
+                    var dllPath = Path.Combine(dir, $"{dirName}.dll");
+                    if (File.Exists(dllPath))
+                    {
+                        LoadModule(dllPath);
+                    }
+                }
+            }
+            _initialModulesLoaded = true;
+        }
+
+        public Assembly LoadModule(string dllPath)
+        {
+            if (string.IsNullOrWhiteSpace(dllPath) || !File.Exists(dllPath))
+            {
+                _errorHandler.HandleError(new FileNotFoundException($"Module DLL not found at {dllPath}"), new TraceContext(), $"Attempted to load a module from an invalid path: {dllPath}.");
+                return null;
+            }
+
+            var assemblyName = AssemblyName.GetAssemblyName(dllPath);
+            var moduleId = assemblyName.Name;
+
+            if (_loadedModules.ContainsKey(moduleId))
+            {
+                _errorHandler.HandleError(null, new TraceContext(), $"Module '{moduleId}' is already loaded.", isCritical: false);
+                return _loadedModules[moduleId].Assembly;
+            }
+
+            try
+            {
+                var loadContext = new ModuleLoadContext(dllPath);
+                var assembly = loadContext.LoadFromAssemblyName(assemblyName);
+                
+                var moduleInfo = new ModuleInfo(moduleId, assembly, loadContext);
+                _loadedModules.Add(moduleId, moduleInfo);
+
+                DiscoverModuleCapabilities(moduleInfo);
+
+                _errorHandler.HandleError(null, new TraceContext(), $"Module '{moduleId}' loaded successfully.", isCritical: false);
+                return assembly;
+            }
+            catch (Exception ex)
+            {
+                _errorHandler.HandleError(ex, new TraceContext(), $"Error loading module from {dllPath}.");
+                return null;
+            }
+        }
+        
+        public void UnloadModule(string moduleId)
+        {
+            if (!_loadedModules.TryGetValue(moduleId, out var moduleInfo))
+            {
+                _errorHandler.HandleError(null, new TraceContext(), $"Module '{moduleId}' not found for unloading.", isCritical: false);
                 return;
             }
 
-            var moduleDirectories = Directory.GetDirectories(modulesPath);
-            foreach (var dir in moduleDirectories)
+            try
             {
-                var dirName = new DirectoryInfo(dir).Name;
-                var dllPath = Path.Combine(dir, $"{dirName}.dll");
+                moduleInfo.State = ModuleState.Unloading;
 
-                if (File.Exists(dllPath))
+                _serviceRoutingRegistry.UnregisterModuleHandlers(moduleId);
+                _serviceRegistry.UnregisterModuleServices(moduleId);
+
+                _loadedModules.Remove(moduleId);
+                moduleInfo.LoadContext.Unload();
+                moduleInfo.State = ModuleState.Unloaded;
+
+                _errorHandler.HandleError(null, new TraceContext(), $"Module '{moduleId}' unloaded successfully.", isCritical: false);
+
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
+            catch (Exception ex)
+            {
+                moduleInfo.State = ModuleState.Error;
+                _errorHandler.HandleError(ex, new TraceContext(), $"Error unloading module '{moduleId}'.");
+            }
+        }
+
+        private void DiscoverModuleCapabilities(ModuleInfo moduleInfo)
+        {
+            var assembly = moduleInfo.Assembly;
+            var moduleId = moduleInfo.ModuleId;
+
+            try
+            {
+                var types = assembly.GetTypes();
+                
+                var apiEndpointType = typeof(IApiEndpoint);
+                var moduleType = typeof(IModule);
+
+                var commandHandlerInterface = typeof(ICommandHandler<,>);
+                var fireAndForgetCommandHandlerInterface = typeof(ICommandHandler<>);
+                var eventHandlerInterface = typeof(IEventHandler<>);
+                var jobHandlerInterface = typeof(IJobHandler<>);
+
+
+                foreach (var type in types.Where(t => !t.IsAbstract && !t.IsInterface))
                 {
-                    try
+                    // Discover Handlers
+                    var handlerPriority = type.GetCustomAttribute<HandlerPriorityAttribute>()?.Priority ?? 0;
+                    var interfaces = type.GetInterfaces();
+                    bool isHandler = false;
+                    foreach (var i in interfaces)
                     {
-                        var loadContext = new ModuleLoadContext(dllPath); // Pass the path to the main assembly
-                        var assembly = loadContext.LoadFromAssemblyName(new AssemblyName(dirName));
-                        _loadedModules.Add((assembly, loadContext));
+                        if (i.IsGenericType)
+                        {
+                            var genericDef = i.GetGenericTypeDefinition();
+                            if (genericDef == commandHandlerInterface || genericDef == fireAndForgetCommandHandlerInterface || genericDef == eventHandlerInterface || genericDef == jobHandlerInterface)
+                            {
+                                moduleInfo.Handlers.Add(new DiscoveredHandler { HandlerType = type, ContractType = i.GetGenericArguments()[0], InterfaceType = i, Priority = handlerPriority, OwningModuleId = moduleId });
+                                isHandler = true;
+                            }
+                        }
                     }
-                    catch (Exception ex)
+
+                    // Discover API Endpoints
+                    if (apiEndpointType.IsAssignableFrom(type))
                     {
-                        Console.WriteLine($"Error loading module from {dllPath}: {ex.Message}");
+                        moduleInfo.ApiEndpoints.Add(type);
+                    }
+                    // Discover Services (any class that implements an interface and is not a handler or endpoint)
+                    else if (interfaces.Any() && !isHandler)
+                    {
+                        moduleInfo.Services.Add(type);
+                    }
+
+
+                    // Discover IModule implementation
+                    if (moduleType.IsAssignableFrom(type))
+                    {
+                        moduleInfo.Instance = (IModule)Activator.CreateInstance(type);
                     }
                 }
             }
-            _modulesLoaded = true;
+            catch (Exception ex)
+            {
+                moduleInfo.State = ModuleState.Error;
+                _errorHandler.HandleError(ex, new TraceContext(), $"Error discovering capabilities in module '{moduleId}'.");
+            }
         }
 
-        /// <summary>
-        /// Returns a distinct list of all assemblies currently loaded by the ModuleLoader,
-        /// including the entry assembly, the executing assembly, and all dynamically loaded module assemblies.
-        /// </summary>
-        /// <returns>A list of loaded Assemblies.</returns>
         public List<Assembly> GetLoadedAssemblies()
         {
-            LoadModulesFromDisk(); // Ensure modules are loaded
+            LoadModulesFromDisk();
             var assemblies = new List<Assembly> { Assembly.GetEntryAssembly(), Assembly.GetExecutingAssembly() };
-            assemblies.AddRange(_loadedModules.Select(lm => lm.Assembly));
+            assemblies.AddRange(_loadedModules.Values.Select(m => m.Assembly));
             return assemblies.Distinct().ToList();
         }
 
-        public List<IModule> GetDiscoveredModules()
-        {
-            LoadModulesFromDisk();
-            var moduleType = typeof(IModule);
-            var instances = new List<IModule>();
-
-            var assembliesToScan = GetLoadedAssemblies();
-
-            foreach (var assembly in assembliesToScan)
-            {
-                var moduleImpls = assembly.GetTypes().Where(p => moduleType.IsAssignableFrom(p) && !p.IsInterface && !p.IsAbstract);
-                foreach(var impl in moduleImpls)
-                {
-                    try
-                    {
-                        // Module instances are created by DI in ConfigureServices
-                        instances.Add((IModule)Activator.CreateInstance(impl));
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Error instantiating module '{impl.Name}': {ex.Message}");
-                    }
-                }
-            }
-            return instances;
-        }
+        public IEnumerable<ModuleInfo> GetLoadedModules() => _loadedModules.Values;
 
         public List<DiscoveredHandler> GetDiscoveredHandlers()
         {
             LoadModulesFromDisk();
-            var handlers = new List<DiscoveredHandler>();
-            var assemblies = GetLoadedAssemblies();
-            
-            var commandHandlerInterface = typeof(ICommandHandler<,>);
-            var fireAndForgetCommandHandlerInterface = typeof(ICommandHandler<>);
-            var eventHandlerInterface = typeof(IEventHandler<>);
-            var jobHandlerInterface = typeof(IJobHandler<>);
-
-            foreach (var assembly in assemblies)
-            {
-                try
-                {
-                    var types = assembly.GetTypes();
-                    foreach (var type in types)
-                    {
-                        if (type.IsAbstract || type.IsInterface) continue;
-
-                        var handlerPriority = type.GetCustomAttribute<HandlerPriorityAttribute>()?.Priority ?? 0;
-                        var owningModuleId = assembly.GetName().Name;
-
-                        var interfaces = type.GetInterfaces();
-
-                        // Command Handlers (with result)
-                        foreach (var i in interfaces.Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == commandHandlerInterface))
-                        {
-                            handlers.Add(new DiscoveredHandler { HandlerType = type, ContractType = i.GetGenericArguments()[0], InterfaceType = i, Priority = handlerPriority, OwningModuleId = owningModuleId });
-                        }
-
-                        // Command Handlers (fire-and-forget)
-                        foreach (var i in interfaces.Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == fireAndForgetCommandHandlerInterface))
-                        {
-                            handlers.Add(new DiscoveredHandler { HandlerType = type, ContractType = i.GetGenericArguments()[0], InterfaceType = i, Priority = handlerPriority, OwningModuleId = owningModuleId });
-                        }
-
-                        // Event Handlers
-                        foreach (var i in interfaces.Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == eventHandlerInterface))
-                        {
-                            handlers.Add(new DiscoveredHandler { HandlerType = type, ContractType = i.GetGenericArguments()[0], InterfaceType = i, Priority = handlerPriority, OwningModuleId = owningModuleId });
-                        }
-
-                        // Job Handlers
-                        foreach (var i in interfaces.Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == jobHandlerInterface))
-                        {
-                            handlers.Add(new DiscoveredHandler { HandlerType = type, ContractType = i.GetGenericArguments()[0], InterfaceType = i, Priority = handlerPriority, OwningModuleId = owningModuleId });
-                        }
-                    }
-                }
-                catch (ReflectionTypeLoadException) { /* Ignore */ }
-                catch (Exception ex) { Console.WriteLine($"Error scanning assembly {assembly.FullName}: {ex.Message}"); }
-            }
-            return handlers;
+            return _loadedModules.Values.SelectMany(m => m.Handlers).ToList();
         }
 
         public List<IApiEndpoint> GetDiscoveredApiEndpoints()
         {
             LoadModulesFromDisk();
             var endpoints = new List<IApiEndpoint>();
-            var assemblies = GetLoadedAssemblies();
-            var apiEndpointType = typeof(IApiEndpoint);
-
-            foreach (var assembly in assemblies)
+            foreach(var module in _loadedModules.Values)
             {
-                try
+                foreach(var endpointType in module.ApiEndpoints)
                 {
-                    var types = assembly.GetTypes();
-                    foreach (var type in types)
+                    try
                     {
-                        if (type.IsAbstract || type.IsInterface) continue;
-                        if (apiEndpointType.IsAssignableFrom(type))
-                        {
-                            try
-                            {
-                                // Instantiate IApiEndpoint implementations to get their properties
-                                // These are assumed to be simple DTOs or stateless registrations
-                                endpoints.Add((IApiEndpoint)Activator.CreateInstance(type));
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"Error instantiating IApiEndpoint '{type.Name}': {ex.Message}");
-                            }
-                        }
+                        endpoints.Add((IApiEndpoint)Activator.CreateInstance(endpointType));
+                    }
+                    catch (Exception ex)
+                    {
+                        _errorHandler.HandleError(ex, new TraceContext(), $"Error instantiating IApiEndpoint '{endpointType.Name}'.");
                     }
                 }
-                catch (ReflectionTypeLoadException) { /* Ignore */ }
-                catch (Exception ex) { Console.WriteLine($"Error scanning assembly for API Endpoints {assembly.FullName}: {ex.Message}"); }
             }
             return endpoints;
         }
 
-        /// <summary>
-        /// Attempts to unload a module identified by its assembly.
-        /// Note: Unloading requires all references to types within the ModuleLoadContext to be cleared.
-        /// This is a complex operation and requires careful management of references.
-        /// </summary>
-        /// <param name="moduleId">The name of the module's assembly (e.g., "SoftwareCenter.AppManager").</param>
-        public void UnloadModule(string moduleId)
+        public List<Type> GetDiscoveredModuleTypes()
         {
-            var moduleToUnload = _loadedModules.FirstOrDefault(lm => lm.Assembly.GetName().Name == moduleId);
-            if (moduleToUnload.Assembly != null)
-            {
-                try
-                {
-                    _loadedModules.Remove(moduleToUnload);
-                    moduleToUnload.Context.Unload();
-                    Console.WriteLine($"Module '{moduleId}' unloaded successfully.");
-                    // Force garbage collection to collect the unloaded assembly.
-                    // This is usually needed after Unload() for effective memory release.
-                    GC.Collect();
-                    GC.WaitForPendingFinalizers();
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error unloading module '{moduleId}': {ex.Message}");
-                }
-            }
+            LoadModulesFromDisk();
+            return _loadedModules.Values.Where(m => m.Instance != null).Select(m => m.Instance.GetType()).ToList();
         }
     }
 }
+

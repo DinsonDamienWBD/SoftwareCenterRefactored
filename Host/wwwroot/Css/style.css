@@ -1,0 +1,120 @@
+:root {
+    --primary-bg-color: #1a1a1d;
+    --secondary-bg-color: #2a2a2e;
+    --tertiary-bg-color: #3a3a3e;
+    --primary-text-color: #c5c6c7;
+    --accent-color: #66fcf1;
+    --accent-color-dark: #45a29e;
+    --border-color: #4b4b4e;
+    --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+html, body {
+    height: 100%;
+    margin: 0;
+    font-family: var(--font-family);
+    color: var(--primary-text-color);
+    background-color: var(--primary-bg-color);
+    overflow: hidden; /* No scroll on the main page */
+}
+
+#app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+#titlebar-zone {
+    height: 32px;
+    background-color: var(--tertiary-bg-color);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+    /* For custom window controls if we go frameless */
+}
+
+#main-content {
+    display: flex;
+    flex-grow: 1;
+    overflow: hidden; /* Prevent this container from causing page scroll */
+}
+
+#nav-zone {
+    width: 200px;
+    background-color: var(--secondary-bg-color);
+    border-right: 1px solid var(--border-color);
+    padding: 10px;
+    overflow-y: auto; /* Allow scrolling for nav items */
+    flex-shrink: 0;
+}
+
+#content-zone {
+    flex-grow: 1;
+    padding: 20px;
+    overflow-y: auto; /* Allow scrolling for content */
+    background-color: var(--primary-bg-color);
+    position: relative; /* For absolute positioning of content containers */
+}
+
+.content-container {
+    display: none; /* Hidden by default */
+    width: 100%;
+    height: 100%;
+}
+
+.content-container.active {
+    display: block; /* Show active container */
+}
+
+#bottom-bar {
+    height: 40px;
+    background-color: var(--tertiary-bg-color);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 10px;
+    flex-shrink: 0;
+}
+
+#notification-zone, #admin-zone, #power-zone {
+    display: flex;
+    align-items: center;
+}
+
+/* Basic styles for injected elements */
+.nav-button {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 5px;
+    background-color: var(--tertiary-bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--primary-text-color);
+    text-align: left;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.nav-button:hover, .nav-button.active {
+    background-color: var(--accent-color-dark);
+    border-color: var(--accent-color);
+}
+
+.card {
+    background-color: var(--secondary-bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+.pop-out-button {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    cursor: pointer;
+    background-color: var(--accent-color-dark);
+    padding: 5px 10px;
+    border-radius: 3px;
+}

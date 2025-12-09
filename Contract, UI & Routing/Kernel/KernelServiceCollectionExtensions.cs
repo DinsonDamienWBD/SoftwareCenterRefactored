@@ -1,14 +1,18 @@
 using Microsoft.Extensions.DependencyInjection;
 using SoftwareCenter.Kernel.Handlers;
 using SoftwareCenter.Core.Discovery.Commands;
-using SoftwareCenter.Core.Commands; // Added for ICommandValidator
+using SoftwareCenter.Core.Commands;
 using SoftwareCenter.Core.Discovery;
 using SoftwareCenter.Kernel.Services;
 using SoftwareCenter.Core.Events;
+using SoftwareCenter.Core.Errors;
+using SoftwareCenter.Core.Modules; // Added for IModule
 using System.Reflection;
 using System.Linq;
-using System.Collections.Generic; // Added for List
-using Microsoft.Extensions.Logging; // Added for logging services
+using System.Collections.Generic;
+using Microsoft.Extensions.Logging;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Hosting; // Added for IHostedService and AddHostedService
 
 namespace SoftwareCenter.Kernel
 {
@@ -16,70 +20,53 @@ namespace SoftwareCenter.Kernel
     {
         public static IServiceCollection AddKernel(this IServiceCollection services)
         {
-            // Register core Kernel services first
-            var moduleLoader = new ModuleLoader();
-            services.AddSingleton(moduleLoader);
+            // Register core Kernel services that don't depend on module discovery
+            services.AddLogging();
+            services.AddSingleton<IErrorHandler, DefaultErrorHandler>();
+            services.AddSingleton<IServiceRegistry, ServiceRegistry>();
+            services.AddSingleton<IServiceRoutingRegistry, ServiceRoutingRegistry>();
+            services.AddSingleton<ModuleLoader>(); // Depends on the above
 
-            // CommandFactory is still needed to map command names to types for the API
-            services.AddSingleton<CommandFactory>(); 
+            services.AddSingleton<ISmartCommandRouter, SmartCommandRouter>();
+            services.AddSingleton<ICommandBus, CommandBus>();
+            services.AddSingleton<IEventBus, EventBus>();
+            services.AddSingleton<CommandFactory>();
             services.AddSingleton<RegistryManifestService>();
             services.AddSingleton<GlobalDataStore>();
+            services.AddSingleton<JobSchedulerService>();
+            services.AddHostedService<JobSchedulerService>(sp => sp.GetRequiredService<JobSchedulerService>());
+
+            // A temporary service provider is created to resolve the ModuleLoader and other services needed for discovery
+            var tempServiceProvider = services.BuildServiceProvider();
+            var moduleLoader = tempServiceProvider.GetRequiredService<ModuleLoader>();
+            var serviceRoutingRegistry = tempServiceProvider.GetRequiredService<IServiceRoutingRegistry>();
+
+            // Load modules and discover their capabilities
+            moduleLoader.LoadModulesFromDisk();
             
-            // Register Smart Router components
-            var serviceRoutingRegistry = new ServiceRoutingRegistry();
-            services.AddSingleton<IServiceRoutingRegistry>(serviceRoutingRegistry);
-            services.AddSingleton<ISmartCommandRouter, SmartCommandRouter>();
-
-            // The CommandBus now relies on the SmartCommandRouter
-            services.AddSingleton<ICommandBus, CommandBus>(); 
-            services.AddSingleton<IEventBus, EventBus>();
-
-            // Enable logging within the Kernel
-            services.AddLogging();
-
-            // Discover and configure modules
-            var discoveredModules = moduleLoader.GetDiscoveredModules();
-            foreach (var module in discoveredModules)
+            // Register discovered modules and their services
+            foreach (var moduleInfo in moduleLoader.GetLoadedModules())
             {
-                module.ConfigureServices(services);
+                if(moduleInfo.Instance != null)
+                {
+                    services.AddSingleton(moduleInfo.Instance.GetType(), moduleInfo.Instance);
+                    services.AddSingleton(typeof(IModule), moduleInfo.Instance);
+                    moduleInfo.Instance.ConfigureServices(services);
+                }
             }
 
-            // Register default Kernel handlers (can be overridden by modules)
-            // The SmartCommandRouter will handle the resolution, so just register the concrete type for DI.
-            // Also, populate the registry with this default handler
-            services.AddTransient<GetRegistryManifestCommandHandler>();
-            serviceRoutingRegistry.RegisterHandler(
-                typeof(GetRegistryManifestCommand), 
-                typeof(GetRegistryManifestCommandHandler), 
-                typeof(ICommandHandler<GetRegistryManifestCommand, RegistryManifest>),
-                0, // Default priority
-                Assembly.GetExecutingAssembly().GetName().Name);
-
-            // Register the default log handler
-            services.AddTransient<DefaultLogCommandHandler>();
-            serviceRoutingRegistry.RegisterHandler(
-                typeof(LogCommand),
-                typeof(DefaultLogCommandHandler),
-                typeof(ICommandHandler<LogCommand>),
-                -100,
-                "Kernel");
-
-
-            // Dynamically register all discovered handlers and populate the routing registry
-            var handlers = moduleLoader.GetDiscoveredHandlers();
-            foreach (var handler in handlers)
+            // Register discovered handlers
+            foreach (var handler in moduleLoader.GetDiscoveredHandlers())
             {
-                // Register the concrete handler type with DI so the SmartCommandRouter can resolve it
                 services.AddTransient(handler.HandlerType);
-                
-                // Register the handler with the routing registry
-                serviceRoutingRegistry.RegisterHandler(
-                    handler.ContractType,
-                    handler.HandlerType,
-                    handler.InterfaceType,
-                    handler.Priority,
-                    handler.OwningModuleId);
+                serviceRoutingRegistry.RegisterHandler(handler.ContractType, handler.HandlerType, handler.InterfaceType, handler.Priority, handler.OwningModuleId);
             }
+
+            // Register default Kernel handlers
+            services.AddTransient<DefaultLogCommandHandler>();
+            serviceRoutingRegistry.RegisterHandler(typeof(LogCommand), typeof(DefaultLogCommandHandler), typeof(ICommandHandler<LogCommand>), -100, "Kernel");
+            services.AddTransient<GetRegistryManifestCommandHandler>();
+            serviceRoutingRegistry.RegisterHandler(typeof(GetRegistryManifestCommand), typeof(GetRegistryManifestCommandHandler), typeof(ICommandHandler<GetRegistryManifestCommand, RegistryManifest>), 0, "Kernel");
 
             // Dynamically register all discovered command validators
             var assembliesToScan = moduleLoader.GetLoadedAssemblies();
@@ -97,6 +84,20 @@ namespace SoftwareCenter.Kernel
             }
 
             return services;
+        }
+
+        /// <summary>
+        /// Performs post-service provider build initialization for all loaded modules.
+        /// </summary>
+        /// <param name="serviceProvider">The application's service provider.</param>
+        /// <returns>A Task representing the asynchronous initialization operation.</returns>
+        public static async Task UseKernel(this IServiceProvider serviceProvider)
+        {
+            var modules = serviceProvider.GetServices<IModule>();
+            foreach (var module in modules)
+            {
+                await module.Initialize(serviceProvider);
+            }
         }
     }
 }

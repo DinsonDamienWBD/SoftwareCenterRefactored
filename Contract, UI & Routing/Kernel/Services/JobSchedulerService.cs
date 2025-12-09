@@ -9,6 +9,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SoftwareCenter.Core.Diagnostics;
 using SoftwareCenter.Core.Jobs;
+using SoftwareCenter.Core.Errors; // Added for IErrorHandler
 
 namespace SoftwareCenter.Kernel.Services
 {
@@ -17,16 +18,20 @@ namespace SoftwareCenter.Kernel.Services
         private readonly IServiceProvider _serviceProvider;
         private readonly ModuleLoader _moduleLoader;
         private readonly ILogger<JobSchedulerService> _logger;
+        private readonly IErrorHandler _errorHandler; // Injected IErrorHandler
         private readonly List<JobRunner> _activeJobs = new List<JobRunner>();
+        private readonly object _lock = new object(); // For thread-safe access to _activeJobs
 
         public JobSchedulerService(
             IServiceProvider serviceProvider,
             ModuleLoader moduleLoader,
-            ILogger<JobSchedulerService> logger)
+            ILogger<JobSchedulerService> logger,
+            IErrorHandler errorHandler) // Added IErrorHandler
         {
             _serviceProvider = serviceProvider;
             _moduleLoader = moduleLoader;
             _logger = logger;
+            _errorHandler = errorHandler; // Assign IErrorHandler
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -41,22 +46,29 @@ namespace SoftwareCenter.Kernel.Services
             {
                 var now = DateTimeOffset.UtcNow;
 
-                foreach (var runner in _activeJobs)
+                List<JobRunner> jobsToRun;
+                lock (_lock)
                 {
-                    if (runner.ShouldRun(now))
-                    {
-                        // Fire and forget - don't await the job so we don't block the scheduler loop
-                        _ = ExecuteJobAsync(runner, stoppingToken);
-                    }
+                    jobsToRun = _activeJobs.Where(runner => runner.ShouldRun(now)).ToList();
+                }
+
+                foreach (var runner in jobsToRun)
+                {
+                    // Fire and forget - don't await the job so we don't block the scheduler loop
+                    _ = ExecuteJobAsync(runner, stoppingToken);
                 }
 
                 // Check schedule every minute
                 // Align to the start of the next minute for cleaner scheduling
                 var delay = TimeSpan.FromMinutes(1) - TimeSpan.FromSeconds(now.Second);
+                if (delay.TotalMilliseconds <= 0) delay = TimeSpan.FromSeconds(0); // Ensure non-negative delay
                 await Task.Delay(delay, stoppingToken);
             }
         }
 
+        /// <summary>
+        /// Discovers IJob implementations from loaded assemblies and registers them with the scheduler.
+        /// </summary>
         private void DiscoverJobs()
         {
             var assemblies = _moduleLoader.GetLoadedAssemblies();
@@ -75,15 +87,63 @@ namespace SoftwareCenter.Kernel.Services
                         {
                             // Create a singleton instance of the job definition to access the CronExpression
                             var jobInstance = (IJob)Activator.CreateInstance(type);
-                            _activeJobs.Add(new JobRunner(jobInstance, type));
+                            RegisterJob(jobInstance, type);
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogError(ex, $"Failed to register job '{type.Name}'.");
+                            _errorHandler.HandleError(ex, new TraceContext(), $"Failed to instantiate or register job '{type.Name}' during discovery.");
                         }
                     }
                 }
-                catch { /* Ignore assembly load errors */ }
+                catch (Exception ex)
+                {
+                    _errorHandler.HandleError(ex, new TraceContext(), $"Error during job discovery in assembly {assembly.FullName}.");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Registers a new job with the scheduler.
+        /// </summary>
+        /// <param name="jobInstance">The instance of the job to register.</param>
+        /// <param name="jobType">The concrete type of the job.</param>
+        public void RegisterJob(IJob jobInstance, Type jobType)
+        {
+            if (jobInstance == null) throw new ArgumentNullException(nameof(jobInstance));
+            if (jobType == null) throw new ArgumentNullException(nameof(jobType));
+
+            lock (_lock)
+            {
+                if (_activeJobs.Any(jr => jr.JobType == jobType))
+                {
+                    _errorHandler.HandleError(null, new TraceContext(), $"Job '{jobType.Name}' is already registered.", isCritical: false);
+                    return;
+                }
+                _activeJobs.Add(new JobRunner(jobInstance, jobType));
+                _logger.LogInformation($"Job '{jobType.Name}' registered dynamically.");
+            }
+        }
+
+        /// <summary>
+        /// Deregisters an existing job from the scheduler.
+        /// </summary>
+        /// <param name="jobType">The concrete type of the job to deregister.</param>
+        public void DeregisterJob(Type jobType)
+        {
+            if (jobType == null) throw new ArgumentNullException(nameof(jobType));
+
+            lock (_lock)
+            {
+                var jobToRemove = _activeJobs.FirstOrDefault(jr => jr.JobType == jobType);
+                if (jobToRemove != null)
+                {
+                    _activeJobs.Remove(jobToRemove);
+                    _logger.LogInformation($"Job '{jobType.Name}' deregistered dynamically.");
+                }
+                else
+                {
+                    _errorHandler.HandleError(null, new TraceContext(), $"Attempted to deregister job '{jobType.Name}', but it was not found.", isCritical: false);
+                }
             }
         }
 
@@ -112,15 +172,19 @@ namespace SoftwareCenter.Kernel.Services
                         {
                             await (Task)method.Invoke(handler, new object[] { runner.JobInstance, traceContext });
                         }
+                        else
+                        {
+                             _errorHandler.HandleError(null, traceContext, $"[Scheduler] Method 'ExecuteAsync' not found on handler for job '{runner.JobType.Name}'.", isCritical: false);
+                        }
                     }
                     else
                     {
-                        _logger.LogWarning($"[Scheduler] No handler registered for job '{runner.JobType.Name}'.");
+                        _errorHandler.HandleError(null, traceContext, $"[Scheduler] No handler registered for job '{runner.JobType.Name}'.", isCritical: false);
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, $"[Scheduler] Error executing job '{runner.JobType.Name}' (TraceId: {traceId})");
+                    _errorHandler.HandleError(ex, traceContext, $"[Scheduler] Error executing job '{runner.JobType.Name}'.");
                 }
                 finally
                 {

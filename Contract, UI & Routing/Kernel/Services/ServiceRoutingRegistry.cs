@@ -48,6 +48,21 @@ namespace SoftwareCenter.Kernel.Services
             return Enumerable.Empty<HandlerRegistration>();
         }
 
+        public void UnregisterModuleHandlers(string moduleId)
+        {
+            foreach (var contractType in _registrations.Keys)
+            {
+                if (_registrations.TryGetValue(contractType, out var handlers))
+                {
+                    handlers.RemoveWhere(r => r.OwningModuleId == moduleId);
+                    if (handlers.Count == 0)
+                    {
+                        _registrations.TryRemove(contractType, out _);
+                    }
+                }
+            }
+        }
+
         /// <summary>
         /// Comparer for HandlerRegistration to ensure sorting by priority (highest first) and then by module ID for tie-breaking.
         /// </summary>
