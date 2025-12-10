@@ -1,7 +1,8 @@
 using Microsoft.AspNetCore.SignalR;
 using SoftwareCenter.Core.Events;
 using SoftwareCenter.Core.Events.UI;
-using System.Collections.Generic;
+using SoftwareCenter.Core.UI;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace SoftwareCenter.Host.Services
@@ -18,46 +19,59 @@ namespace SoftwareCenter.Host.Services
     {
         private readonly IHubContext<UIHub> _hubContext;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="UIHubNotifier"/> class.
+        /// </summary>
+        /// <param name="hubContext">The SignalR hub context.</param>
         public UIHubNotifier(IHubContext<UIHub> hubContext)
         {
             _hubContext = hubContext;
         }
 
         /// <summary>
-        /// Handles the event for a new UI element being registered.
+        /// Handles the event for a new UI element being registered and sends it to clients.
         /// </summary>
         public Task Handle(UIElementRegisteredEvent anEvent)
         {
-            // The client-side app expects a specific structure.
-            var payload = new
+            var payload = new UIElementInfo
             {
-                elementId = anEvent.NewElement.Id,
-                parentId = anEvent.NewElement.ParentId,
-                htmlContent = anEvent.HtmlContent,
-                cssContent = anEvent.CssContent,
-                jsContent = anEvent.JsContent
+                Id = anEvent.NewElement.Id,
+                ParentId = anEvent.NewElement.ParentId,
+                ElementType = anEvent.NewElement.ElementType.ToString(),
+                OwnerModuleId = anEvent.NewElement.OwnerModuleId,
+                Priority = anEvent.NewElement.Priority,
+                SlotName = anEvent.NewElement.SlotName,
+                Properties = anEvent.NewElement.Properties,
+                ChildrenIds = anEvent.NewElement.Children.Select(c => c.Id).ToList()
             };
+
+            // Add the raw content to the properties dictionary for the client
+            payload.Properties["htmlContent"] = anEvent.HtmlContent;
+            payload.Properties["cssContent"] = anEvent.CssContent;
+            payload.Properties["jsContent"] = anEvent.JsContent;
+            
             return _hubContext.Clients.All.SendAsync("ElementAdded", payload);
         }
 
         /// <summary>
-        /// Handles the event for a UI element being removed.
+        /// Handles the event for a UI element being removed and sends it to clients.
         /// </summary>
         public Task Handle(UIElementUnregisteredEvent anEvent)
         {
-            var payload = new { elementId = anEvent.ElementId };
+            // Only the ID is needed to remove an element on the client
+            var payload = new UIElementInfo { Id = anEvent.ElementId };
             return _hubContext.Clients.All.SendAsync("ElementRemoved", payload);
         }
 
         /// <summary>
-        /// Handles the event for a UI element being updated.
+        /// Handles the event for a UI element being updated and sends it to clients.
         /// </summary>
         public Task Handle(UIElementUpdatedEvent anEvent)
         {
-            var payload = new
+            var payload = new UIElementInfo
             {
-                elementId = anEvent.ElementId,
-                attributes = anEvent.UpdatedProperties
+                Id = anEvent.ElementId,
+                Properties = anEvent.UpdatedProperties
             };
             return _hubContext.Clients.All.SendAsync("ElementUpdated", payload);
         }

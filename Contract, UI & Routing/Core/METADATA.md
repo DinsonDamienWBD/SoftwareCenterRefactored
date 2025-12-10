@@ -87,16 +87,6 @@ SoftwareCenter.Core/
 - **Constructor:**
     - `LogCommand(LogLevel level, string message, ITraceContext traceContext, Exception exception = null, Dictionary<string, object> structuredData = null)`
 
-### `Contract, UI & Routing/Core/Commands/UI/CreateElementCommand.cs`
-- **Class Name:** `CreateElementCommand`
-- **Implements:** `ICommand<Guid>`
-- **Properties:**
-    - `ElementType` (ElementType, read-only)
-    - `ParentId` (Guid?, read-only)
-    - `InitialProperties` (Dictionary<string, object>, read-only)
-- **Constructor:**
-    - `CreateElementCommand(ElementType elementType, Guid? parentId = null, Dictionary<string, object> initialProperties = null)`
-
 ### `Contract, UI & Routing/Core/Commands/UI/CreateUIElementCommand.cs`
 - **Class Name:** `CreateUIElementCommand`
 - **Implements:** `ICommand<string>`
@@ -194,26 +184,6 @@ SoftwareCenter.Core/
     - **Function:** `bool IsAdmin(string requestingModuleId)`
         - **Parameters:** `requestingModuleId` (`string`)
         - **Returns:** `bool`
-
-### `Contract, UI & Routing/Core/Data/UIElement.cs`
-- **Record Class Name:** `UIElement`
-- **Properties (from record primary constructor):**
-    - `Id` (string)
-    - `OwnerId` (string)
-    - `ElementType` (string)
-    - `ParentId` (string?, optional)
-    - `Attributes` (Dictionary<string, string>?, optional)
-    - `Permissions` (AccessPermissions, optional, default `AccessPermissions.None`)
-
-### `Contract, UI & Routing/Core/Data/UI/UIElement.cs`
-- **Record Class Name:** `UIElement`
-- **Properties (from record primary constructor):**
-    - `Id` (string)
-    - `OwnerId` (string)
-    - `ElementType` (string)
-    - `ParentId` (string?, optional)
-    - `Attributes` (Dictionary<string, string>?, optional)
-    - `Permissions` (AccessPermissions, optional, default `AccessPermissions.None`)
 
 ### `Contract, UI & Routing/Core/Diagnostics/ITraceContext.cs`
 - **Interface Name:** `ITraceContext`
