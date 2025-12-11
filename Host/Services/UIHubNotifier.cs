@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
+using SoftwareCenter.Core.Diagnostics;
 using SoftwareCenter.Core.Events;
 using SoftwareCenter.Core.Events.UI;
 using SoftwareCenter.Core.UI;
