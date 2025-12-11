@@ -1,4 +1,5 @@
 using SoftwareCenter.Core.Routing;
+using SoftwareCenter.Core.Data;
 
 namespace SoftwareCenter.Core.Commands.UI
 {

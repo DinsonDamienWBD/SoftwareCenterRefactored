@@ -27,4 +27,5 @@
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.1" />
     </ItemGroup>
 
+    <!-- Added a comment to trigger re-evaluation of dependencies -->
 </Project>
