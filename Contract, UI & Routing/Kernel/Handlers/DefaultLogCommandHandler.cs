@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using SoftwareCenter.Core.Commands;
 using SoftwareCenter.Core.Logs;
 using SoftwareCenter.Core.Attributes;
+using SoftwareCenter.Core.Diagnostics;
 using System.Linq;
 
 namespace SoftwareCenter.Kernel.Handlers
