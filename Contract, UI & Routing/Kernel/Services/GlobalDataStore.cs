@@ -80,7 +80,7 @@ namespace SoftwareCenter.Kernel.Services
                 existingItem.Value = value;
                 existingItem.LastUpdatedAt = DateTimeOffset.UtcNow;
                 existingItem.LastUpdaterTraceId = traceContext.TraceId;
-                _dataCollection.Update(BsonMapper.Global.ToBson(existingItem));
+                _dataCollection.Update(BsonMapper.Global.ToDocument(existingItem));
             }
             else
             {
@@ -105,7 +105,7 @@ namespace SoftwareCenter.Kernel.Services
                     // For this iteration, we'll keep it simple and ensure owner has full.
                     // This parameter is kept for future advanced use cases.
                 }
-                _dataCollection.Insert(BsonMapper.Global.ToBson(newItem));
+                _dataCollection.Insert(BsonMapper.Global.ToDocument(newItem));
             }
         }
 
@@ -148,7 +148,7 @@ namespace SoftwareCenter.Kernel.Services
             }
 
             storeItem.SharedPermissions[targetModuleId] = permissions;
-            _dataCollection.Update(BsonMapper.Global.ToBson(storeItem));
+            _dataCollection.Update(BsonMapper.Global.ToDocument(storeItem));
         }
 
         public void TransferOwnership(string key, string newOwnerModuleId, ITraceContext traceContext)
@@ -172,7 +172,7 @@ namespace SoftwareCenter.Kernel.Services
 
             storeItem.OwnerModuleId = newOwnerModuleId;
             storeItem.SharedPermissions.Clear(); // Ownership transfer typically clears previous shares
-            _dataCollection.Update(BsonMapper.Global.ToBson(storeItem));
+            _dataCollection.Update(BsonMapper.Global.ToDocument(storeItem));
         }
         
         private string GetInitiatingModuleId(ITraceContext traceContext)
@@ -196,7 +196,7 @@ namespace SoftwareCenter.Kernel.Services
                 Timestamp = DateTimeOffset.UtcNow,
                 TraceId = traceContext.TraceId,
                 InitiatingModuleId = initiatingModuleId,
-                Context = context != null ? JsonSerializer.Serialize(context) : string.Empty
+                Context = context != null ? System.Text.Json.JsonSerializer.Serialize(context) : string.Empty
             };
             _auditCollection.Insert(auditRecord);
         }
