@@ -20,12 +20,9 @@ namespace SoftwareCenter.Kernel.Services
         public CommandFactory(ModuleLoader moduleLoader)
         {
             _commandMap = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
-            
-            // Ensure modules are loaded before scanning
-            moduleLoader.LoadModulesFromDisk();
 
             var assemblies = new List<Assembly> { Assembly.GetEntryAssembly(), Assembly.GetExecutingAssembly() }
-                .Concat(moduleLoader.GetDiscoveredModules().Select(m => m.GetType().Assembly))
+                .Concat(moduleLoader.GetLoadedModules().Select(m => m.Assembly))
                 .Distinct();
 
             var commandInterface = typeof(ICommand);
