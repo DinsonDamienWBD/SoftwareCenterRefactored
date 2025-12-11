@@ -1,5 +1,6 @@
-using SoftwareCenter.Core.Data.UI;
+using SoftwareCenter.Core.Data;
 using SoftwareCenter.Core.Routing;
+using SoftwareCenter.Core.UI;
 
 namespace SoftwareCenter.UIManager.Services
 {

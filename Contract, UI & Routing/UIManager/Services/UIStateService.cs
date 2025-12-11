@@ -1,4 +1,5 @@
 using SoftwareCenter.Core.Events;
+using SoftwareCenter.Kernel.Services;
 using SoftwareCenter.Core.UI;
 using System.Collections.Concurrent;
 using System.Collections.Generic;

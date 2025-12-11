@@ -5,7 +5,7 @@ namespace SoftwareCenter.Core.Commands.UI
     /// <summary>
     /// A command to create a new UI element in the UI Manager.
     /// </summary>
-    public class CreateUIElementCommand : ICommand<string>
+    public class CreateUIElementCommand : ICommand<string>, ICommand
     {
         /// <summary>
         /// Gets the ID of the module that will own this new element.
