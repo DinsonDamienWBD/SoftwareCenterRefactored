@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Core\SoftwareCenter.Core.csproj" />
+    <ProjectReference Include="..\Kernel\SoftwareCenter.Kernel.csproj" />
   </ItemGroup>
 
 </Project>
