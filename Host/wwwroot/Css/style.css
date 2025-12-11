@@ -29,8 +29,65 @@ html, body {
     background-color: var(--tertiary-bg-color);
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
-    /* For custom window controls if we go frameless */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 10px;
+    -webkit-app-region: drag; /* Allows dragging the window */
 }
+
+#title-text {
+    font-weight: bold;
+}
+
+#titlebar-controls {
+    display: flex;
+    align-items: center;
+    -webkit-app-region: no-drag; /* Exclude controls from drag region */
+}
+
+.titlebar-icon {
+    position: relative;
+    padding: 0 8px;
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    height: 32px;
+}
+
+.titlebar-icon:hover {
+    background-color: var(--secondary-bg-color);
+}
+
+.flyout, .dropdown {
+    display: none;
+    position: absolute;
+    top: 32px; /* Position below the title bar */
+    right: 0;
+    background-color: var(--secondary-bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    min-width: 200px;
+    z-index: 1000;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+#notification-flyout {
+    padding: 15px;
+}
+
+.dropdown a {
+    display: block;
+    padding: 10px 15px;
+    color: var(--primary-text-color);
+    text-decoration: none;
+}
+
+.dropdown a:hover {
+    background-color: var(--accent-color-dark);
+}
+
 
 #main-content {
     display: flex;
@@ -38,13 +95,16 @@ html, body {
     overflow: hidden; /* Prevent this container from causing page scroll */
 }
 
-#nav-zone {
-    width: 200px;
+#nav-rail-zone {
+    width: 60px;
     background-color: var(--secondary-bg-color);
     border-right: 1px solid var(--border-color);
-    padding: 10px;
+    padding: 10px 0;
     overflow-y: auto; /* Allow scrolling for nav items */
     flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 #content-zone {
@@ -65,35 +125,21 @@ html, body {
     display: block; /* Show active container */
 }
 
-#bottom-bar {
-    height: 40px;
-    background-color: var(--tertiary-bg-color);
-    border-top: 1px solid var(--border-color);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0 10px;
-    flex-shrink: 0;
-}
-
-#notification-zone, #admin-zone, #power-zone {
-    display: flex;
-    align-items: center;
-}
-
 /* Basic styles for injected elements */
 .nav-button {
-    display: block;
-    width: 100%;
-    padding: 10px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 48px;
+    height: 48px;
     margin-bottom: 5px;
     background-color: var(--tertiary-bg-color);
     border: 1px solid var(--border-color);
     color: var(--primary-text-color);
-    text-align: left;
     cursor: pointer;
     border-radius: 4px;
     transition: background-color 0.2s, border-color 0.2s;
+    font-size: 24px;
 }
 
 .nav-button:hover, .nav-button.active {
