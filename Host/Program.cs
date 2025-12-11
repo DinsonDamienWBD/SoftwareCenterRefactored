@@ -1,3 +1,4 @@
+using SoftwareCenter.Core.Data;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -146,7 +147,7 @@ using (var scope = app.Services.CreateScope())
             {
                     { "Label", "Applications" },
                     { "TargetContainerId", "host-apps-content" },
-                    { "Priority", -10 }
+                    { "Priority", HandlerPriority.Low }
             }),
         hostTraceContext);
 
@@ -155,11 +156,11 @@ using (var scope = app.Services.CreateScope())
         new CreateUIElementCommand(
             ownerModuleId: "Host",
             parentId: "content-zone",
-            elementType: Core.UI.ElementType.Panel.ToString(), // Use Panel for a generic container
+            elementType: SoftwareCenter.Core.UI.ElementType.Panel.ToString(), // Use Panel for a generic container
             initialProperties: new Dictionary<string, object>
             {
                     { "Id", "host-apps-content" }, // Explicitly set ID for easy targeting
-                    { "Priority", -10 }
+                    { "Priority", HandlerPriority.Low }
             }),
         hostTraceContext);
 
@@ -168,7 +169,7 @@ using (var scope = app.Services.CreateScope())
         new RegisterUIFragmentCommand(
             htmlContent: "<h1>Applications</h1>",
             parentId: contentContainerId, // Use the ID of the newly created container
-            priority: -10),
+            priority: HandlerPriority.Low),
         hostTraceContext);
 }
 
