@@ -34,7 +34,7 @@ namespace SoftwareCenter.UIManager.Handlers
                 command.HtmlContent,
                 command.CssContent,
                 command.JsContent,
-                command.Priority,
+                (int)command.Priority,
                 command.SlotName
             );
 
