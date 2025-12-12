@@ -10,6 +10,7 @@ using SoftwareCenter.Core.Diagnostics;
 using SoftwareCenter.Core.UI;
 using SoftwareCenter.Host;
 using SoftwareCenter.Host.Services;
+using SoftwareCenter.Host.Hubs;
 using SoftwareCenter.Kernel;
 using SoftwareCenter.Kernel.Services;
 using SoftwareCenter.UIManager;
@@ -46,8 +47,16 @@ moduleLoader.ConfigureModuleServices(builder.Services);
 
 builder.Services.AddKernel();
 builder.Services.AddUIManager();
+builder.Services.AddControllers();
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<ITemplateService, HostTemplateService>();
+
+// 1. Register UI Services
+// We pass the WebRootPath (wwwroot) to the Template Service so it can find files.
+builder.Services.AddSingleton<UiTemplateService>(sp =>
+    new UiTemplateService(builder.Environment.WebRootPath));
+
+builder.Services.AddScoped<IUiService, UiRenderer>();
 
 var app = builder.Build();
 
@@ -99,9 +108,22 @@ app.MapPost("/api/dispatch/{commandName}", async (
 });
 
 
-// --- Frontend Hosting ---
+// Configure the HTTP request pipeline.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Error");
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+
+// 2. Serve Static Files (CSS, JS, Fonts)
+// IMPORTANT: We do NOT serve index.html via UseStaticFiles default behavior for root,
+// because our MainController handles the root path "/".
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.UseRouting();
+app.UseAuthorization();
 
 var rootPath = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
 var modulesPath = Path.Combine(rootPath, "Modules");
@@ -122,6 +144,11 @@ if (Directory.Exists(modulesPath))
         }
     }
 }
+
+// 3. Map Endpoints
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Main}/{action=Index}/{id?}");
 
 app.MapHub<UIHub>("/uihub");
 
