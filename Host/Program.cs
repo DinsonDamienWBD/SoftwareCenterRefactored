@@ -28,13 +28,23 @@ builder.Logging.AddConsole();
 // We manually trigger module service configuration to allow modules to register their own services.
 var tempServices = new ServiceCollection();
 tempServices.AddKernel();
+
+#pragma warning disable ASP0000
 var tempProvider = tempServices.BuildServiceProvider();
+#pragma warning restore ASP0000
+
 var tempErrorHandler = tempProvider.GetRequiredService<SoftwareCenter.Core.Errors.IErrorHandler>();
 var tempRoutingRegistry = tempProvider.GetRequiredService<IServiceRoutingRegistry>();
 var tempServiceRegistry = tempProvider.GetRequiredService<IServiceRegistry>();
 
 var moduleLoader = new ModuleLoader(tempErrorHandler, tempRoutingRegistry, tempServiceRegistry);
 moduleLoader.ConfigureModuleServices(builder.Services);
+
+// Explicitly dispose of the temporary provider to prevent any lingering singletons
+if (tempProvider is IDisposable disposableProvider)
+{
+    disposableProvider.Dispose();
+}
 
 // --- 3. Core Service Registration ---
 builder.Services.AddKernel();

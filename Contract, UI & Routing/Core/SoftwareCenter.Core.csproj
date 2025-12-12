@@ -23,7 +23,9 @@
         We include these abstractions to allow for standard DI and Logging patterns 
         without forcing a specific implementation on the Modules.
         -->
+        <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.1" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.1" />
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1" />
     </ItemGroup>
 
