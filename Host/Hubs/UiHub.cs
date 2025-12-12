@@ -1,6 +1,5 @@
 ﻿using Microsoft.AspNetCore.SignalR;
-using SoftwareCenter.Core.Interfaces;
-using SoftwareCenter.Core.Models;
+using SoftwareCenter.Core.UI;
 using System.Threading.Tasks;
 
 namespace SoftwareCenter.Host.Hubs

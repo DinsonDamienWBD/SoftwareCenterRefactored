@@ -1,4 +1,5 @@
-﻿using HtmlAgilityPack;
+﻿using Microsoft.AspNetCore.Hosting;
+using HtmlAgilityPack;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -14,13 +15,16 @@ namespace SoftwareCenter.UIManager.Services
         private readonly string _webRootPath;
         private Dictionary<string, string> _templateCache;
 
-        public UiTemplateService(string webRootPath)
+        public UiTemplateService(IWebHostEnvironment env)
         {
-            _webRootPath = webRootPath;
+            _webRootPath = env.WebRootPath;
         }
 
         public async Task<string> GetZoneHtmlAsync(string zoneName)
         {
+            // Safety check in case webroot is missing
+            if (string.IsNullOrEmpty(_webRootPath)) return "";
+
             var path = Path.Combine(_webRootPath, "Html", $"{zoneName.ToLower()}-zone.html");
             if (!File.Exists(path)) return $"";
             return await File.ReadAllTextAsync(path);

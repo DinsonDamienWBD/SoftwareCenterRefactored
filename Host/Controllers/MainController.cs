@@ -1,5 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using SoftwareCenter.Core.Interfaces;
+using SoftwareCenter.Core.UI;
 using System.Threading.Tasks;
 
 namespace SoftwareCenter.Host.Controllers

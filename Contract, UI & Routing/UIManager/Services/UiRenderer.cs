@@ -1,6 +1,4 @@
 ﻿using HtmlAgilityPack;
-using SoftwareCenter.Core.Interfaces;
-using SoftwareCenter.Core.Models;
 using SoftwareCenter.Core.UI;
 using System;
 using System.Text;
@@ -34,7 +32,7 @@ namespace SoftwareCenter.UIManager.Services
             var indexHtml = await System.IO.File.ReadAllTextAsync(indexPath);
 
             // 2. Regex Discovery: var regex = new Regex(@"");
-
+            var regex = new Regex(@"");
             var processedHtml = await regex.ReplaceAsync(indexHtml, async (match) =>
             {
                 var zoneName = match.Groups[1].Value.Trim(); // e.g., "TITLEBAR"
