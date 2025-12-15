@@ -12,6 +12,8 @@ namespace SoftwareCenter.UIManager
         {
             // Register UIManager services
             services.AddSingleton<UIStateService>();
+            services.AddSingleton<UiTemplateService>();
+            services.AddSingleton<IUiService, UiRenderer>();
 
             // The Host is responsible for providing the implementation of IUIHubNotifier
             // services.AddTransient<IUIHubNotifier, ...>();
@@ -22,6 +24,7 @@ namespace SoftwareCenter.UIManager
             services.AddTransient<ICommandHandler<UnregisterUIElementCommand>, UnregisterUIElementCommandHandler>();
             services.AddTransient<ICommandHandler<RequestUITemplateCommand, string>, RequestUITemplateCommandHandler>();
             services.AddTransient<ICommandHandler<ShareUIElementOwnershipCommand>, ShareUIElementOwnershipCommandHandler>();
+            services.AddTransient<ICommandHandler<ProcessUIManifestCommand>, ProcessUIManifestCommandHandler>();
 
             return services;
         }

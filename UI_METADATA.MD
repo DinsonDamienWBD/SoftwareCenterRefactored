@@ -7,7 +7,7 @@
 ## 1. Overview
 This project utilizes a **Composite UI (Micro-Frontend)** architecture. The "Host" application provides the shell, layout, and styling, while various "Modules" provide functional UI fragments.
 
-The composition logic is handled by a backend **UIManager**, which orchestrates the injection of HTML fragments into specific slots (Zones) within the Host, ensuring a unified look and feel via a centralized Template Library.
+The composition logic is handled by the backend **UIManager** project, which orchestrates the injection of HTML fragments into specific slots (Zones) within the Host, ensuring a unified look and feel via a centralized Template Library. The core logic for this composition is implemented in the `UiRenderer` class within the UIManager project.
 
 ---
 
@@ -28,18 +28,18 @@ Every UI component (Zone or Fragment) is defined by two primary attributes:
     * *Leaf nodes (like Buttons or Inputs) do not have mount points.*
 
 ### 2.2. The Injection Tokens
-The `index.html` file does not contain hardcoded IDs for zones. Instead, it uses **Injection Tokens** that the UIManager parses and replaces.
+The `index.html` file does not contain hardcoded IDs for zones. Instead, it uses **Injection Tokens** that the UIManager's `UiRenderer` parses and replaces.
 
-* **Format:** ``
-* **Example:** ``
+*   **Format:** ``
+*   **Example:** ``
 
 ### 2.3. Internal Addressing (Composite/Molecular Components)
 While "Atomic" components (like a single button) use a unique `data-GUID`, complex "Molecular" components (like a Rich Card with header, content, and action rows) use a relative addressing system to avoid backend overhead.
 
-* **Attribute:** `data-ui-key="[name]"`
-* **Purpose:** Identifies a specific internal sub-element relative to the component's Root GUID.
-* **Scope:** Unique only within the specific template instance.
-* **Usage Pattern:**
+*   **Attribute:** `data-ui-key="[name]"`
+*   **Purpose:** Identifies a specific internal sub-element relative to the component's Root GUID.
+*   **Scope:** Unique only within the specific template instance.
+*   **Usage Pattern:**
     1.  **Host** defines standard keys in the template (e.g., `close-btn`, `title-label`).
     2.  **Module** receives the Root GUID.
     3.  **Module** locates sub-elements using scoped queries:
@@ -53,8 +53,8 @@ While "Atomic" components (like a single button) use a unique `data-GUID`, compl
 ## 3. Workflow & Composition
 
 ### 3.1. Server-Side Composition (The "Initial Load")
-1.  **Host Start:** UIManager reads `index.html`.
-2.  **Discovery:** UIManager finds all `` tokens.
+1.  **Host Start:** The `UiRenderer` service (part of the UIManager project) reads `index.html`.
+2.  **Discovery:** The `UiRenderer` finds all `` tokens.
 3.  **Processing:**
     * Loads the corresponding `[name]-zone.html`.
     * Injects a Runtime GUID into `{{UI_COMPONENT_ID}}`.
@@ -62,14 +62,14 @@ While "Atomic" components (like a single button) use a unique `data-GUID`, compl
 4.  **Serve:** The fully composed HTML is sent to the browser.
 
 ### 3.2. Dynamic Injection (Runtime / SignalR)
-1.  **Request:** A Module sends a **UI Manifest** (JSON) to UIManager.
+1.  **Request:** A Module sends a **UI Manifest** (JSON) to the UIManager project (typically via a command handler).
     * *Payload:* `{ TargetGuid: "...", TemplateType: "card", Content: "..." }`
-2.  **Templating:** UIManager looks up the `TemplateType` in `standard-templates.html`.
+2.  **Templating:** The `UiRenderer` looks up the `TemplateType` in `standard-templates.html`.
 3.  **Hydration:**
     * Extracts the HTML from the `<template>` tag.
     * Replaces `{{UI_COMPONENT_ID}}` with a new GUID.
     * Replaces `{{CONTENT}}` with the payload data.
-4.  **Transport:** UIManager sends the hydrated HTML to the client via SignalR.
+4.  **Transport:** A UIManager command handler sends the hydrated HTML to the client via SignalR.
 5.  **Rendering:**
     * Client `app.js` receives `InjectFragment` event.
     * Finds the DOM element with `data-GUID` matching the Target.

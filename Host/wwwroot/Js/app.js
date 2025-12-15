@@ -72,6 +72,46 @@ const uiRenderer = {
         mountNode.appendChild(newElement);
 
         console.log(`Fragment ${payload.newGuid} injected into ${payload.targetGuid} @ ${payload.mountPoint}`);
+
+        // Auto-initialize composite controls (e.g. search-box) so UIManager ownership is wired
+        try {
+            const autoInit = async () => {
+                if (!window.UIManagerClient) return; // helper not available
+
+                // Helper to derive moduleId from payload or element dataset
+                const deriveModuleId = (el) => {
+                    return payload && (payload.requestingModuleId || payload.moduleId || payload.sourceModule || payload.ownerModule)
+                        || (el && (el.dataset.requestingModule || el.dataset.moduleId))
+                        || null;
+                };
+
+                const initBox = async (box) => {
+                    const moduleId = deriveModuleId(box);
+                    try {
+                        await window.UIManagerClient.mountSearchBox(box, moduleId, { autoForward: true });
+                        console.log('Mounted search box for', moduleId, box);
+                    } catch (e) {
+                        console.warn('Failed to auto-mount search box', e);
+                    }
+                };
+
+                // If the injected element itself is a search box
+                if (newElement.classList && newElement.classList.contains('std-search-box')) {
+                    await initBox(newElement);
+                }
+
+                // Any nested search-box elements
+                const nested = newElement.querySelectorAll ? newElement.querySelectorAll('.std-search-box') : [];
+                for (const el of nested) {
+                    await initBox(el);
+                }
+            };
+
+            // schedule async init without blocking the main flow
+            setTimeout(() => autoInit().catch(() => {}), 0);
+        } catch (e) {
+            console.warn('Auto-init controls failed', e);
+        }
     },
 
     /**
@@ -105,6 +145,10 @@ const uiRenderer = {
     }
 };
 
+// Expose connection and renderer so UIManager helpers can forward events or use renderer APIs.
+window.uiHubConnection = connection;
+window.uiRenderer = uiRenderer;
+
 
 // --- SignalR Event Listeners ---
 
@@ -112,6 +156,24 @@ const uiRenderer = {
 connection.on("InjectFragment", (payload) => uiRenderer.addFragment(payload));
 connection.on("UpdateFragment", (payload) => uiRenderer.updateFragment(payload));
 connection.on("RemoveFragment", (payload) => uiRenderer.removeFragment(payload));
+
+// Fallback listener: if UIManagerClient falls back to emitting 'uimanager:route', forward to hub.
+document.addEventListener('uimanager:route', async (e) => {
+    try {
+        const detail = e && e.detail ? e.detail : null;
+        if (!detail) return;
+        const { moduleId, commandName, payload } = detail;
+        if (connection && typeof connection.invoke === 'function') {
+            // Try to route to module via hub. Host-side hub should expose a RouteToModule method.
+            await connection.invoke('RouteToModule', moduleId, commandName, payload);
+            console.log('Routed uimanager:route to hub for', moduleId, commandName);
+        } else {
+            console.warn('SignalR connection not available to route uimanager:route', detail);
+        }
+    } catch (err) {
+        console.warn('Error forwarding uimanager:route to hub', err);
+    }
+});
 
 
 // --- Host Interaction Logic ---

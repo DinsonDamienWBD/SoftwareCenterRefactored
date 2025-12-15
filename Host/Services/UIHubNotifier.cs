@@ -3,6 +3,7 @@ using SoftwareCenter.Core.Diagnostics;
 using SoftwareCenter.Core.Events;
 using SoftwareCenter.Core.Events.UI;
 using SoftwareCenter.Core.UI;
+using SoftwareCenter.UIManager.Services;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -14,6 +15,7 @@ namespace SoftwareCenter.Host.Services
     /// bridge between the .NET backend and the JavaScript frontend.
     /// </summary>
     public class UIHubNotifier :
+        IUIHubNotifier, // Implements the new interface
         IEventHandler<UIElementRegisteredEvent>,
         IEventHandler<UIElementUnregisteredEvent>,
         IEventHandler<UIElementUpdatedEvent>
@@ -28,6 +30,40 @@ namespace SoftwareCenter.Host.Services
         {
             _hubContext = hubContext;
         }
+
+        // --- IUIHubNotifier Implementation ---
+
+        public Task InjectFragment(string targetGuid, string mountPoint, string htmlContent)
+        {
+            var clientPayload = new
+            {
+                targetGuid,
+                mountPoint,
+                htmlContent,
+                newGuid = "EXTRACTED_FROM_HTML" 
+            };
+            return _hubContext.Clients.All.SendAsync("InjectFragment", clientPayload);
+        }
+
+        public Task UpdateFragment(string targetGuid, string mountPoint, string htmlContent)
+        {
+            var clientPayload = new
+            {
+                targetGuid,
+                mountPoint,
+                htmlContent,
+                newGuid = "EXTRACTED_FROM_HTML"
+            };
+            return _hubContext.Clients.All.SendAsync("UpdateFragment", clientPayload);
+        }
+
+        public Task RemoveFragment(string targetGuid)
+        {
+            return _hubContext.Clients.All.SendAsync("RemoveFragment", new { targetGuid });
+        }
+
+
+        // --- IEventHandler Implementations ---
 
         /// <summary>
         /// Handles the event for a new UI element being registered and sends it to clients.

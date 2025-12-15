@@ -1,49 +1,37 @@
 ﻿using Microsoft.AspNetCore.SignalR;
-using SoftwareCenter.Core.UI;
+using SoftwareCenter.Core.Commands;
+using SoftwareCenter.Core.Diagnostics;
+using SoftwareCenter.Kernel.Services;
 using System.Threading.Tasks;
 
 namespace SoftwareCenter.Host.Hubs
 {
     public class UiHub : Hub
     {
-        private readonly IUiService _uiService;
+        private readonly ICommandBus _commandBus;
+        private readonly CommandFactory _commandFactory;
 
-        public UiHub(IUiService uiService)
+        public UiHub(ICommandBus commandBus, CommandFactory commandFactory)
         {
-            _uiService = uiService;
+            _commandBus = commandBus;
+            _commandFactory = commandFactory;
         }
 
-        // Called by Modules (via a local client or API bridge) to inject UI
-        public async Task ProcessManifest(UiManifest manifest)
+        public async Task RouteToModule(string moduleId, string commandName, object payload)
         {
-            // 1. Build the HTML on the server
-            var htmlOutput = await _uiService.RenderManifestAsync(manifest);
+            var commandType = _commandFactory.GetCommandType(commandName);
+            if (commandType == null)
+            {
+                // Optionally, send an error back to the client
+                return;
+            }
 
-            // 2. Determine Payload for Client
-            // Corresponds to 'addFragment' payload in app.js
-            var clientPayload = new
-            {
-                targetGuid = manifest.TargetGuid,
-                mountPoint = manifest.MountPoint,
-                htmlContent = htmlOutput,
-                // If it's a custom element with CSS, we might send it separately, 
-                // but for now let's assume rawCss is handled by a specific 'InjectStyle' event if needed.
-                newGuid = "EXTRACTED_FROM_HTML" // Client logic handles finding the guid in the HTML
-            };
+            var command = System.Text.Json.JsonSerializer.Deserialize(payload.ToString(), commandType, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-            // 3. Send to Frontend
-            if (manifest.Operation == "inject")
-            {
-                await Clients.All.SendAsync("InjectFragment", clientPayload);
-            }
-            else if (manifest.Operation == "update")
-            {
-                await Clients.All.SendAsync("UpdateFragment", clientPayload);
-            }
-            else if (manifest.Operation == "remove")
-            {
-                await Clients.All.SendAsync("RemoveFragment", new { targetGuid = manifest.TargetGuid });
-            }
+            var traceContext = new TraceContext();
+            traceContext.Items["ModuleId"] = moduleId;
+            
+            await _commandBus.Dispatch((ICommand)command, traceContext);
         }
     }
 }

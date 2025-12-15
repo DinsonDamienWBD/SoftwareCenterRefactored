@@ -2,70 +2,89 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
-using SoftwareCenter.Core;
-using SoftwareCenter.Core.Commands;
-using SoftwareCenter.Core.Diagnostics;
-using SoftwareCenter.Core.UI;
-using SoftwareCenter.Host.Controllers; // Implied for MainController
-using SoftwareCenter.Host.Hubs;
 using SoftwareCenter.Kernel;
-using SoftwareCenter.Kernel.Services;
-using SoftwareCenter.UIManager.Services;
-using SoftwareCenter.Host.Services; // HostTemplateService
-using SoftwareCenter.Core.Discovery.Commands; // GetRegistryManifestCommand
+using SoftwareCenter.UIManager;
+using SoftwareCenter.Host.Hubs;
+using SoftwareCenter.Host.Services;
 using System;
 using System.IO;
 using System.Reflection;
+using SoftwareCenter.Core.Commands;
 using System.Text.Json;
-using System.Threading.Tasks;
-using SoftwareCenter.UIManager;
+using SoftwareCenter.Core.Diagnostics;
+using SoftwareCenter.Core.Discovery.Commands;
+using SoftwareCenter.Kernel.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// --- 1. Logging Configuration ---
+#region Service Registration
+
+// 1. Add Logging
 builder.Logging.ClearProviders();
-builder.Logging.AddProvider(new SoftwareCenter.Kernel.Logging.FileLoggerProvider(Path.Combine(AppContext.BaseDirectory, "Logs", "SoftwareCenter.log")));
 builder.Logging.AddConsole();
+// Note: FileLoggerProvider is in Kernel, will be registered via AddKernel if needed.
 
-// --- 2. Module Loader Setup (Pre-Container Build) ---
-var tempServices = new ServiceCollection();
-// Register Kernel services so modules can access core types during ConfigureModuleServices
-tempServices.AddKernel();
-tempServices.AddUIManager();
-
-#pragma warning disable ASP0000
-var tempProvider = tempServices.BuildServiceProvider();
-#pragma warning restore ASP0000
-
-var tempErrorHandler = tempProvider.GetRequiredService<SoftwareCenter.Core.Errors.IErrorHandler>();
-var tempRoutingRegistry = tempProvider.GetRequiredService<IServiceRoutingRegistry>();
-var tempServiceRegistry = tempProvider.GetRequiredService<IServiceRegistry>();
-
-var moduleLoader = new ModuleLoader(tempErrorHandler, tempRoutingRegistry, tempServiceRegistry);
-// Let modules register their own services into the real builder.Services; Host does not reference module types
-moduleLoader.ConfigureModuleServices(builder.Services);
-
-if (tempProvider is IDisposable disposableProvider)
-{
-    disposableProvider.Dispose();
-}
-
-// --- 3. Core Service Registration ---
+// 2. Add Core Infrastructure (Kernel)
+// The Kernel is responsible for core services, command bus, and loading modules.
 builder.Services.AddKernel();
+
+// 3. Add UI Manager
+// The UIManager handles UI state and composition.
+builder.Services.AddUIManager();
+
+// 4. Add Host-specific Services
 builder.Services.AddControllers();
 builder.Services.AddSignalR();
 
-// --- 4. UI Service Registration (New Architecture) ---
-// Register UIManager and Host-provided template service per metadata
-builder.Services.AddUIManager();
-builder.Services.AddSingleton<ITemplateService, HostTemplateService>();
+// Registers the service that populates the UI with the Host's own features on startup.
+builder.Services.AddHostedService<HostFeatureUIService>();
 
-// Register the Renderer which handles the Manifest logic and Index composition
-builder.Services.AddScoped<IUiService, UiRenderer>();
+// Register the Host's notifier as the implementation for the UIManager's interface
+builder.Services.AddTransient<SoftwareCenter.UIManager.Services.IUIHubNotifier, UIHubNotifier>();
+
+#endregion
 
 var app = builder.Build();
 
-// --- 5. API Endpoints (Command Dispatcher) ---
+#region Middleware Pipeline
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Error");
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.UseStaticFiles(); // Serves files from wwwroot
+
+// Add static file serving for each module's wwwroot directory
+var rootPath = Path.GetDirectoryName(Assembly.GetEntryAssembly()?.Location) ?? AppContext.BaseDirectory;
+var modulesPath = Path.Combine(rootPath, "Modules");
+if (Directory.Exists(modulesPath))
+{
+    foreach (var moduleDir in Directory.GetDirectories(modulesPath))
+    {
+        var moduleWwwRoot = Path.Combine(moduleDir, "wwwroot");
+        if (Directory.Exists(moduleWwwRoot))
+        {
+            var moduleName = new DirectoryInfo(moduleDir).Name;
+            app.UseStaticFiles(new StaticFileOptions
+            {
+                FileProvider = new PhysicalFileProvider(moduleWwwRoot),
+                RequestPath = $"/Modules/{moduleName}"
+            });
+        }
+    }
+}
+
+app.UseRouting();
+app.UseAuthorization();
+
+#endregion
+
+#region API Endpoints
+
+// Endpoint for receiving commands from the frontend
 app.MapPost("/api/dispatch/{commandName}", async (
     string commandName,
     JsonElement payload,
@@ -73,13 +92,11 @@ app.MapPost("/api/dispatch/{commandName}", async (
     CommandFactory commandFactory) =>
 {
     var commandType = commandFactory.GetCommandType(commandName);
-
     if (commandType == null)
     {
         return Results.NotFound($"Command '{commandName}' not found.");
     }
 
-    // TODO: The ModuleId should come from an authenticated user's claims or a request header.
     var traceContext = new TraceContext { Items = { ["ModuleId"] = "Host.Frontend" } };
 
     try
@@ -87,16 +104,13 @@ app.MapPost("/api/dispatch/{commandName}", async (
         var command = payload.Deserialize(commandType, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         if (command == null) return Results.BadRequest("Could not deserialize command payload.");
 
-        // Check if the command returns a result (ICommand<T>)
         var resultInterface = commandType.GetInterfaces().FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommand<>));
         if (resultInterface != null)
         {
             var resultType = resultInterface.GetGenericArguments()[0];
             var dispatchMethod = typeof(ICommandBus).GetMethod(nameof(ICommandBus.Dispatch)).MakeGenericMethod(resultType);
-
             var task = (Task)dispatchMethod.Invoke(commandBus, new object[] { command, traceContext });
             await task;
-
             var result = task.GetType().GetProperty("Result")?.GetValue(task);
             return Results.Ok(result);
         }
@@ -112,7 +126,7 @@ app.MapPost("/api/dispatch/{commandName}", async (
     }
 });
 
-// --- Manifest endpoint ---
+// Endpoint for retrieving the service/command manifest
 app.MapGet("/api/manifest", async (ICommandBus commandBus) =>
 {
     try
@@ -127,59 +141,17 @@ app.MapGet("/api/manifest", async (ICommandBus commandBus) =>
     }
 });
 
-// --- 6. Pipeline Configuration ---
-if (!app.Environment.IsDevelopment())
-{
-    app.UseExceptionHandler("/Error");
-    app.UseHsts();
-}
-
-app.UseHttpsRedirection();
-
-// IMPORTANT: Removed app.UseDefaultFiles().
-// We want the root "/" to be handled by MainController.Index, not by serving a static file.
-app.UseStaticFiles();
-
-app.UseRouting();
-app.UseAuthorization();
-
-// --- 7. Module Static Files ---
-var rootPath = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
-var modulesPath = Path.Combine(rootPath, "Modules");
-if (Directory.Exists(modulesPath))
-{
-    var moduleDirectories = Directory.GetDirectories(modulesPath);
-    foreach (var moduleDir in moduleDirectories)
-    {
-        var moduleWwwRoot = Path.Combine(moduleDir, "wwwroot");
-        if (Directory.Exists(moduleWwwRoot))
-        {
-            var moduleName = new DirectoryInfo(moduleDir).Name;
-            app.UseStaticFiles(new StaticFileOptions
-            {
-                FileProvider = new PhysicalFileProvider(moduleWwwRoot),
-                RequestPath = $"/Modules/{moduleName}"
-            });
-        }
-    }
-}
-
-// --- 8. Endpoint Mapping ---
-app.MapControllerRoute(
-    name: "default",
-    pattern: "{controller=Main}/{action=Index}/{id?}");
-
-// Map the new SignalR Hub
+// Map controller routes and the SignalR hub
+app.MapControllerRoute(name: "default", pattern: "{controller=Main}/{action=Index}/{id?}");
 app.MapHub<UiHub>("/uihub");
 
-// --- 9. System Initialization ---
-using (var scope = app.Services.CreateScope())
-{
-    var serviceProvider = scope.ServiceProvider;
+#endregion
 
-    // Initialize Modules (Backend Logic)
-    var loader = serviceProvider.GetRequiredService<ModuleLoader>();
-    await loader.InitializeModules(serviceProvider);
-}
+#region Application Initialization
+// All initialization is now handled by IHostedService implementations.
+// The ModuleLoader is an IHostedService registered by AddKernel().
+// The HostFeatureUIService is also an IHostedService.
+// They will be started automatically by the host.
+#endregion
 
 app.Run();

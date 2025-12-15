@@ -942,6 +942,75 @@ html, body {
         margin-left: -1px;
     }
 
+/* --- SEARCH BOX (Composite Control) --- */
+.std-search-box {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
+
+.std-search-box .std-input-group-merged {
+    align-items: center;
+}
+
+.std-search-input {
+    padding-right: 36px; /* leave space for icon button */
+}
+
+.std-search-btn {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    margin-left: -1px;
+    border-radius: 0 4px 4px 0;
+    font-size: 16px;
+}
+
+.std-search-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+
+.std-search-mode-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #aaa;
+    font-size: 0.9em;
+}
+
+.std-search-dropdown {
+    position: relative;
+    background-color: var(--secondary-bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    max-height: 180px;
+    overflow-y: auto;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    padding: 6px 0;
+    width: 100%;
+    z-index: 1100;
+}
+
+.std-search-dropdown .std-search-suggestion {
+    padding: 8px 12px;
+    cursor: pointer;
+    color: var(--primary-text-color);
+}
+
+.std-search-dropdown .std-search-suggestion:hover {
+    background-color: var(--tertiary-bg-color);
+}
+
+/* Small responsive tweak: pack mode select to the right on narrow widths */
+@media (max-width: 480px) {
+    .std-search-controls { flex-direction: column; align-items: stretch; }
+    .std-search-mode-label { justify-content: space-between; }
+}
+
 
 /* --- VISUALS --- */
 

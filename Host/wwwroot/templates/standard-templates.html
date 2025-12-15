@@ -411,6 +411,28 @@
     </div>
 </template>
 
+<template id="tpl-search-box">
+    <div class="std-search-box" data-GUID="{{UI_COMPONENT_ID}}">
+        <div class="std-input-group-merged">
+            <input type="search" class="std-search-input std-input" placeholder="{{CONTENT}}" aria-label="Search" />
+            <button type="button" class="std-btn-icon-only std-search-btn" data-ui-key="search-btn">🔍</button>
+        </div>
+
+        <div class="std-search-controls">
+            <label class="std-search-mode-label">Mode
+                <select class="std-select std-search-mode" data-ui-key="search-mode">
+                    <option value="as-you-type">Search as you type</option>
+                    <option value="on-enter">Search on enter key</option>
+                </select>
+            </label>
+
+            <div class="std-search-dropdown" data-ui-key="suggestions" hidden>
+                <!-- Suggestion items inserted at runtime -->
+            </div>
+        </div>
+    </div>
+</template>
+
 <template id="tpl-button-group">
     <div class="std-btn-group" data-GUID="{{UI_COMPONENT_ID}}" data-mount-point="default">
     </div>
@@ -481,3 +503,40 @@
         <div class="std-empty-text">{{CONTENT}}</div>
     </div>
 </template>
+
+<!--
+    USAGE EXAMPLE: Requesting and responding to `tpl-search-box`
+
+    - Flow (recommended):
+        1) A Module requests UIManager to create a search box (module -> UIManager).
+        2) UIManager injects the `tpl-search-box` template into the desired mount point.
+        3) Host-side injection logic (uiRenderer) auto-initializes the control and calls
+             `UIManagerClient.mountSearchBox(injectedElement, requestingModuleId)` which loads
+             the control script (`/js/search-box.js`) lazily and wires events.
+        4) Searches are forwarded to the requesting module via SignalR hub method `RouteToModule`
+             or via the fallback DOM event `uimanager:route` (detail: { moduleId, commandName, payload }).
+
+    - Module example (client-side listener fallback):
+        document.addEventListener('uimanager:route', (e) => {
+            const { moduleId, commandName, payload } = e.detail || {};
+            if (moduleId === 'MyModule' && commandName === 'SearchQuery') {
+                    // payload.query contains the search text
+                    // Respond with suggestions via UIManagerClient or by calling SearchBox API
+                    // Example: UIManagerClient.forwardToModule is used by UIManager; modules should
+                    // call UIManager to set suggestions back into the control:
+                    const box = document.querySelector('.std-search-box[data-GUID="' + payload.origin + '"]');
+                    if (box && window.UIManagerClient) {
+                            // Provide suggestions (array of strings or {label,value} objects)
+                            box.uimanager && box.uimanager.setSuggestions(['Result 1', 'Result 2']);
+                    }
+            }
+        });
+
+    - Programmatic usage (module responding):
+        // After UIManager injects the control and associates it with your module,
+        // you can call:
+        const box = document.querySelector('.std-search-box[data-GUID="<GUID>"]');
+        if (box && window.SearchBox) SearchBox.setSuggestions(box, [{label:'One', value:'one'}]);
+
+    Note: These are examples and rely on UIManagerClient and SearchBox being provided by Host.
+-->
