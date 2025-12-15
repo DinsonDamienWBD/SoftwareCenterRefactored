@@ -2,6 +2,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SoftwareCenter.Core.Commands;
 using SoftwareCenter.Core.Commands.UI;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,79 +11,66 @@ namespace SoftwareCenter.Host.Services
 {
     public class HostFeatureUIService : IHostedService
     {
-        private readonly ICommandBus _commandBus;
         private readonly ILogger<HostFeatureUIService> _logger;
-        private readonly IHostApplicationLifetime _appLifetime;
+        private readonly ICommandBus _commandBus;
 
-        public HostFeatureUIService(ICommandBus commandBus, ILogger<HostFeatureUIService> logger, IHostApplicationLifetime appLifetime)
+        public HostFeatureUIService(ILogger<HostFeatureUIService> logger, ICommandBus commandBus)
         {
-            _commandBus = commandBus;
             _logger = logger;
-            _appLifetime = appLifetime;
+            _commandBus = commandBus;
         }
 
-        public Task StartAsync(CancellationToken cancellationToken)
+        public async Task StartAsync(CancellationToken cancellationToken)
         {
-            _appLifetime.ApplicationStarted.Register(() =>
+            _logger.LogInformation("Host Feature UI Service is starting.");
+
+            try
             {
-                Task.Run(async () =>
+                // 1. Create UI for AppManager
+                await CreateFeatureUI("AppManager", "appmanager-icon");
+
+                // 2. Create UI for SourceManager
+                await CreateFeatureUI("SourceManager", "sourcemanager-icon");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to create host feature UI.");
+            }
+        }
+
+        private async Task CreateFeatureUI(string featureName, string icon)
+        {
+            // Create Content Container
+            var contentContainerId = await _commandBus.Dispatch<string>(new CreateUIElementCommand(
+                ownerModuleId: "Host",
+                parentId: "content-zone",
+                elementType: "content-container",
+                initialProperties: new Dictionary<string, object>
                 {
-                    await InitializeHostFeaturesAsync();
-                }, cancellationToken);
-            });
-            return Task.CompletedTask;
+                    { "Title", featureName }
+                }
+            ));
+            _logger.LogInformation($"Created content container for {featureName} with ID: {contentContainerId}");
+
+            // Create Navigation Button
+            var navButtonId = await _commandBus.Dispatch<string>(new CreateUIElementCommand(
+                ownerModuleId: "Host",
+                parentId: "nav-rail-zone",
+                elementType: "nav-button",
+                initialProperties: new Dictionary<string, object>
+                {
+                    { "Label", featureName },
+                    { "TargetContainerId", contentContainerId },
+                    { "Icon", icon }
+                }
+            ));
+            _loggerLogInformation($"Created nav button for {featureName} with ID: {navButtonId}");
         }
 
         public Task StopAsync(CancellationToken cancellationToken)
         {
+            _logger.LogInformation("Host Feature UI Service is stopping.");
             return Task.CompletedTask;
-        }
-
-        private async Task InitializeHostFeaturesAsync()
-        {
-            _logger.LogInformation("HostFeatureUIService is initializing host features UI.");
-
-            var hostFeatures = new[]
-            {
-                new { Name = "App Manager", Id = "host-app-manager" },
-                new { Name = "Source Manager", Id = "host-source-manager" }
-            };
-
-            foreach (var feature in hostFeatures)
-            {
-                try
-                {
-                    // Request Nav Button
-                    var navButtonId = await _commandBus.Send<RequestUITemplateCommand, string>(new RequestUITemplateCommand(
-                        templateType: "nav-button",
-                        parentId: null,
-                        initialProperties: new Dictionary<string, object>
-                        {
-                            { "SlotName", "nav-rail" },
-                            { "Title", feature.Name },
-                            { "TargetId", $"{feature.Id}-content" } // Convention for linking button to content
-                        }
-                    ));
-                    _logger.LogInformation("Created nav button for {FeatureName} with ID {NavButtonId}", feature.Name, navButtonId);
-
-                    // Request Content Panel
-                    var contentPanelId = await _commandBus.Send<RequestUITemplateCommand, string>(new RequestUITemplateCommand(
-                        templateType: "content-panel",
-                        parentId: null, // Top-level element
-                        initialProperties: new Dictionary<string, object>
-                        {
-                            { "Id", $"{feature.Id}-content" }, // Use the ID the button will target
-                            { "SlotName", "content-area" },
-                            { "Title", feature.Name }
-                        }
-                    ));
-                    _logger.LogInformation("Created content panel for {FeatureName} with ID {ContentPanelId}", feature.Name, contentPanelId);
-                }
-                catch (System.Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to create UI for host feature: {FeatureName}", feature.Name);
-                }
-            }
         }
     }
 }

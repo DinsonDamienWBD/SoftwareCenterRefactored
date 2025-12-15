@@ -14,6 +14,10 @@ using System.Text.Json;
 using SoftwareCenter.Core.Diagnostics;
 using SoftwareCenter.Core.Discovery.Commands;
 using SoftwareCenter.Kernel.Services;
+using System.Diagnostics;
+using System.Linq;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.Extensions.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -152,6 +156,35 @@ app.MapHub<UiHub>("/uihub");
 // The ModuleLoader is an IHostedService registered by AddKernel().
 // The HostFeatureUIService is also an IHostedService.
 // They will be started automatically by the host.
+
+// Launch browser
+if (app.Environment.IsDevelopment())
+{
+    var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+    lifetime.ApplicationStarted.Register(() =>
+    {
+        var addresses = app.Services.GetRequiredService<IServerAddressesFeature>().Addresses;
+        var url = addresses.FirstOrDefault(x => x.StartsWith("https://")) ?? addresses.FirstOrDefault();
+
+        if (!string.IsNullOrEmpty(url))
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                };
+                Process.Start(psi);
+            }
+            catch(Exception ex)
+            {
+                var logger = app.Services.GetRequiredService<ILogger<Program>>();
+                logger.LogError(ex, "Could not open browser.");
+            }
+        }
+    });
+}
 #endregion
 
 app.Run();
